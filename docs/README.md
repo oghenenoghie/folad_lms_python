@@ -60,6 +60,34 @@ cd backend
 pytest
 ```
 
+### Windows, without WSL/Docker
+
+If Docker Desktop's WSL2 backend won't start (`HCS_E_SERVICE_NOT_AVAILABLE`, a conflicting
+hypervisor like VirtualBox already claiming VT-x, or the machine is too RAM-constrained for
+Docker Desktop's own VM overhead — it wants 4GB+ before any containers even run), skip Docker
+entirely and run everything as native Windows processes instead:
+
+1. Install Python 3.12+ from python.org (check "Add python.exe to PATH").
+2. Install PostgreSQL 16 from postgresql.org (EDB installer) — note the `postgres` superuser
+   password you set during install.
+3. Install [Memurai Developer](https://www.memurai.com/get-memurai) (free, Redis-compatible,
+   runs as a Windows service on port 6379) — Redis has no official Windows build.
+4. Create the database: open "SQL Shell (psql)" from the Start menu and run
+   `CREATE DATABASE sms;`
+5. In Git Bash:
+   ```bash
+   cd backend
+   python -m venv .venv
+   source .venv/Scripts/activate   # Scripts, not bin, on Windows
+   pip install -e ".[dev]"
+   cp .env.example .env
+   ```
+   Edit `.env`: set `POSTGRES_USER=postgres` and `POSTGRES_PASSWORD=<password from step 2>`
+   (reuses the superuser instead of creating a separate `sms` role).
+6. `cd django_app && python manage.py migrate && python manage.py runserver 0.0.0.0:8000`
+7. In a second Git Bash window: `cd backend/fastapi_app && uvicorn main:app --reload --port 8001`
+   (activate the same `.venv` first).
+
 ## Repository structure
 
 See §20 of `ARCHITECTURE.md` for the full layout and rationale.
