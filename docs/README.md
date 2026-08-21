@@ -1,7 +1,9 @@
 # School Management System
 
-Multi-tenant school management platform. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
-full system design, module breakdown, database catalogue, and milestone roadmap.
+Multi-tenant school management platform. API-driven — no frontend ships in this repo; any UI
+(web, mobile) is a separate client consuming the HTTP APIs below. See
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full system design, module breakdown, database
+catalogue, and milestone roadmap.
 
 **Status:** Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
 
@@ -11,7 +13,6 @@ full system design, module breakdown, database catalogue, and milestone roadmap.
   every write.
 - **FastAPI** (`backend/fastapi_app`) — async edge service: reporting reads, webhooks,
   notifications, public API. Never writes domain state directly.
-- **Next.js** (`frontend`) — App Router frontend for all human roles.
 - **PostgreSQL, Redis, Celery, S3-compatible storage (MinIO locally)** — cross-cutting
   infrastructure, wired together in `docker-compose.yml`.
 
@@ -22,7 +23,6 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- App: http://localhost:8080
 - Django API: http://localhost:8080/api/v1/
 - Django Admin: http://localhost:8080/admin/
 - FastAPI edge API + docs: http://localhost:8080/edge/v1/, http://localhost:8080/docs (direct
@@ -53,15 +53,6 @@ cd django_app && python manage.py migrate && python manage.py runserver
 cd backend/fastapi_app && uvicorn main:app --reload --port 8001
 ```
 
-Frontend (Node 20+):
-
-```bash
-cd frontend
-npm install
-cp .env.example .env.local
-npm run dev
-```
-
 Tests:
 
 ```bash
@@ -78,7 +69,6 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
-frontend/              # Next.js App Router app
 infrastructure/        # Dockerfiles, nginx config, scripts
 docs/                  # This file, ARCHITECTURE.md, and future module docs
 ```
