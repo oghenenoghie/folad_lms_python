@@ -14,6 +14,7 @@ venv/
 staticfiles/
 media/
 db.sqlite3
+*.rdb
 
 # Node / Next.js
 node_modules/

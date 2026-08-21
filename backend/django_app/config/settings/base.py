@@ -24,10 +24,15 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "apps.core",
+    "apps.tenancy",
+    "apps.accounts",
 ]
+
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.tenancy.middleware.TenancyResetMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -112,7 +117,7 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 # --- DRF ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        "apps.accounts.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -121,9 +126,17 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 25,
 }
 
-# --- JWT access/refresh TTLs (wired to auth app in Milestone 2) ---
+# --- JWT access/refresh TTLs + signing key ---
 JWT_ACCESS_TOKEN_TTL = timedelta(minutes=env.int("JWT_ACCESS_TOKEN_TTL_MIN", default=15))
 JWT_REFRESH_TOKEN_TTL = timedelta(days=env.int("JWT_REFRESH_TOKEN_TTL_DAYS", default=7))
+JWT_SECRET_KEY = env("JWT_SECRET_KEY", default=None)  # falls back to SECRET_KEY if unset
+
+# --- Login lockout ---
+LOGIN_LOCKOUT_THRESHOLD = env.int("LOGIN_LOCKOUT_THRESHOLD", default=5)
+LOGIN_LOCKOUT_WINDOW = timedelta(minutes=env.int("LOGIN_LOCKOUT_WINDOW_MIN", default=15))
+
+# Roles required to complete MFA at login, by name (accounts.Role.name).
+MFA_REQUIRED_ROLES = env.list("MFA_REQUIRED_ROLES", default=["SUPER_ADMIN", "SCHOOL_ADMIN"])
 
 # --- Object storage (S3 / R2 / MinIO), consumed by the StorageBackend protocol ---
 STORAGE_BACKEND = env("STORAGE_BACKEND", default="s3")
