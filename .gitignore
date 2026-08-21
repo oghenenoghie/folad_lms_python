@@ -13,6 +13,7 @@ __pycache__/
 venv/
 staticfiles/
 media/
+db.sqlite3
 
 # Node / Next.js
 node_modules/
