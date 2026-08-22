@@ -90,7 +90,7 @@ The single rule that makes this safe: **every arrow that writes a domain row ori
 | Core framework | Django 5.x + Django REST Framework | Models, migrations, auth, RBAC, authoritative API, Admin |
 | Async edge | FastAPI + Pydantic v2 + Pydantic Settings | Read APIs, webhooks, notification triggers, public API, OpenAPI |
 | DB access | Django ORM (authoritative). SQLAlchemy Core (read-only) permitted inside FastAPI for report queries only | No SQLAlchemy models mirror Django models |
-| Database | PostgreSQL 16 | Primary relational store; read replica for reporting |
+| Database | PostgreSQL 18 | Primary relational store; read replica for reporting |
 | Cache / broker | Redis 7 | Cache, rate-limit counters, Celery broker + result, optional sessions |
 | Task queue | Celery 5 + Celery Beat | Email, notifications, report generation, bulk import/export, scheduled reminders |
 | Object storage | S3 / Cloudflare R2 / MinIO via a `StorageBackend` protocol | Documents, report-card PDFs, media |
