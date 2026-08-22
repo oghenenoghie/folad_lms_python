@@ -1,12 +1,17 @@
 from functools import lru_cache
+from pathlib import Path
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
     """Edge-service settings, shared shape with Django's env vars (see .env.example)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
     environment: str = "development"
 
@@ -21,7 +26,16 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "insecure-dev-key-change-me"
     jwt_algorithm: str = "HS256"
 
-    cors_allowed_origins: list[str] = []
+    cors_allowed_origins: Annotated[list[str], NoDecode] = []
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _split_comma_separated(cls, value: object) -> object:
+        # Matches Django's env.list() convention (comma-separated), not
+        # pydantic-settings' default JSON-array parsing for list fields.
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
     @property
     def database_url(self) -> str:
