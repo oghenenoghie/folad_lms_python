@@ -17,10 +17,17 @@ def enable_rls(table_name: str, org_column: str = "organization_id"):
         with schema_editor.connection.cursor() as cursor:
             cursor.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
             cursor.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
+            # current_setting(..., true) can return '' rather than NULL for an
+            # unset custom GUC on some connections (observed under
+            # pytest-django's per-test transaction rollback, which reverts a
+            # session-level set_config()). ''::bigint raises a hard DataError
+            # instead of failing closed, so NULLIF coerces it to NULL first —
+            # NULL never equals org_column, so the query still returns zero
+            # rows rather than crashing.
             cursor.execute(
                 f"""
                 CREATE POLICY tenant_isolation ON {table_name}
-                USING ({org_column} = current_setting('app.current_org', true)::bigint)
+                USING ({org_column} = NULLIF(current_setting('app.current_org', true), '')::bigint)
                 """
             )
 
