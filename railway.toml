@@ -1,0 +1,26 @@
+# Railway service config for the Django web app (backend/django_app).
+#
+# This repo is a monorepo (Django + FastAPI + Celery share one image, see
+# infrastructure/docker/backend.Dockerfile). Railway can't auto-detect a
+# Django app buried under backend/django_app with dependencies declared in
+# backend/pyproject.toml, so this file pins the build to the existing,
+# already-working Dockerfile rather than re-deriving a build pipeline.
+#
+# Only ONE Railway service should use this file: the Django web app.
+# It does not define a Postgres service (Neon, external, is the database —
+# see RAILWAY_DEPLOYMENT.md) and does not start Celery worker/beat or the
+# FastAPI edge service; those are out of scope for this deployment.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "infrastructure/docker/backend.Dockerfile"
+
+[deploy]
+# Runs once per deploy, before the new version receives traffic. Only
+# `migrate` — never `flush`, `makemigrations`, or anything destructive.
+preDeployCommand = "cd django_app && python manage.py migrate --noinput"
+startCommand = "cd django_app && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
+healthcheckPath = "/health/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

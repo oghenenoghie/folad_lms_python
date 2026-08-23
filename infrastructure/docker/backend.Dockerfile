@@ -31,6 +31,12 @@ COPY backend/shared /app/shared
 
 ENV PYTHONPATH="/app/django_app:/app/fastapi_app:/app"
 
+# Bakes hashed/compressed static assets into the image at build time (no
+# DB/Redis/env vars needed — collectstatic only touches the filesystem).
+# Runs as root before the chown below so the resulting files end up owned
+# by appuser like everything else.
+RUN cd django_app && DJANGO_SETTINGS_MODULE=config.settings.prod python manage.py collectstatic --noinput
+
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
