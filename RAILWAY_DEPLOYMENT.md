@@ -118,7 +118,7 @@ Set these on the **Django web service** (not on the Redis service):
 | `DJANGO_SETTINGS_MODULE` | `config.settings.prod` | Selects `prod.py` (HTTPS redirect, secure cookies, HSTS). |
 | `DJANGO_SECRET_KEY` | a long random value | Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"`. Never reuse the repo's dev default. |
 | `DJANGO_DEBUG` | `False` | |
-| `DJANGO_ALLOWED_HOSTS` | `your-app.up.railway.app` (add your custom domain later, comma-separated) | |
+| `DJANGO_ALLOWED_HOSTS` | `your-app.up.railway.app,healthcheck.railway.app` (add your custom domain later, comma-separated) | **Must include `healthcheck.railway.app`.** Railway's internal healthcheck prober sends that as the `Host` header — not your service's real domain — when hitting `/health/` before marking a deploy healthy. Without it, Django's `DisallowedHost` check rejects the probe and the deploy fails its healthcheck even though the app is otherwise working. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://your-app.up.railway.app` (add custom domain later) | Full origin incl. scheme, comma-separated, no trailing slash. |
 | `DATABASE_URL` | Neon **direct** connection string | See §1. Get it from the Neon console link at the top of this doc. |
 | `REDIS_URL` | your Railway Redis service's connection URL | Railway exposes this as a variable on the Redis service (`REDIS_URL` or similar) — reference it via Railway's variable-reference syntax (`${{Redis.REDIS_URL}}`) or copy it in manually. |
