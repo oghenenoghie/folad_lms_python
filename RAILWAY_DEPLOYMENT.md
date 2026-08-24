@@ -151,25 +151,34 @@ reference:
   --noinput` baked into the image).
 - **Start** (runs `migrate --noinput` then Gunicorn):
   ```
-  cd django_app && python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+  sh -c 'cd django_app && python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3'
   ```
 - **Healthcheck path**: `/health/`
 
-`migrate` runs as part of the start command rather than as a separate
-Railway "Pre-deploy command" step. It was originally a `preDeployCommand`
-(the more common pattern), but on this project that step type failed on
-every attempt with zero captured output anywhere — build logs, deploy
-logs, and Railway's own deployment Diagnosis all came back empty, and the
-failure persisted across a rebuilt service, a fresh Redis service, and
-confirmed-correct `DATABASE_URL`/credentials (verified directly against
-Neon, independent of Railway). Whatever caused it appears specific to
-that Railway step type, not to this app or Neon. Folding `migrate` into
-the start command sidesteps it entirely; `migrate --noinput` is
-idempotent (Django tracks applied migrations in `django_migrations`), so
-running it on every container start is safe — a no-op once the schema is
-current. If Railway resolves whatever was wrong with pre-deploy commands
-on this account, moving `migrate` back to `preDeployCommand` is a one-line
-change in `railway.toml`.
+Two things about this command are load-bearing, both discovered the hard
+way while getting this deployment working:
+
+1. **The explicit `sh -c '...'` wrapper is required.** Railway invokes
+   `startCommand`/`preDeployCommand` directly (exec form), not through a
+   shell. `cd` is a shell builtin, not an executable, so a bare
+   `cd django_app && ...` command fails immediately at the
+   `CREATE_CONTAINER` stage with `The executable \`cd\` could not be
+   found` — and `&&` chaining needs a shell too. This was the root cause
+   of every deployment failure hit while setting this up, including ones
+   that looked like database or infrastructure problems (see below).
+2. **`migrate` runs as part of the start command, not a separate
+   Railway "Pre-deploy command" step.** It was originally a
+   `preDeployCommand` (the more common pattern — runs once before the
+   new version takes traffic), but that step type produced zero captured
+   output on every attempt (build logs, deploy logs, and Railway's own
+   deployment Diagnosis all came back empty) even though the underlying
+   cause was the same shell issue above — Railway just didn't surface an
+   error for that step type the way it eventually did for
+   `CREATE_CONTAINER`. `migrate --noinput` is idempotent (Django tracks
+   applied migrations in `django_migrations`), so running it on every
+   container start is safe — a no-op once the schema is current. If you
+   want to move it back to `preDeployCommand` (with the same `sh -c`
+   wrapper), that's a one-line change in `railway.toml`.
 
 None of these run `flush`, `makemigrations`, or anything else destructive.
 
@@ -190,16 +199,19 @@ exceptions are logged to stdout (see `LOGGING` in
 and logger name — no passwords, tokens, or credentials are logged by any
 code path in this app.
 
-If a deployment fails and Railway's own **Diagnosis** panel (on the
-deployment's Details tab) also fails to explain it (`Retry Diagnosis`
-comes back empty), that's a signal the failure is happening very early —
-before the process produces any output — rather than a normal Python
-exception. Check `railway-agent`/Deploy Logs for a `failureStage` and
-timing: a fast failure (a few seconds) with literally zero log lines
-across build, deploy, and Railway's own diagnosis is not something this
-app's code can explain by itself; treat it as a Railway platform/account
-issue (billing/plan gating, region capacity, scheduling) and check
-Railway's status page or contact support with the deployment ID.
+If a deployment fails with zero log lines anywhere (build, deploy, and
+Railway's own **Diagnosis** panel on the deployment's Details tab all
+come back empty), don't assume it's a Railway platform/account issue —
+that's what it looked like here at first (checked: no active incidents
+on Railway's status page, no maintenance notices, container resource
+metrics flat at zero), but the actual cause was the `cd`/shell problem
+above. A `CREATE_CONTAINER`-stage failure with an error like `The
+executable ... could not be found` is Railway telling you the exact
+problem; it just doesn't always show up in the Diagnosis panel or the
+Deploy Logs tab the first time — retry Diagnosis, and if that's still
+empty, use the Railway MCP `railway-agent` tool (or `railway logs` /
+`railway status` via the CLI) to pull the deployment's `failureStage`
+and `failureError` directly.
 
 ## 7. Test `/health/`
 
