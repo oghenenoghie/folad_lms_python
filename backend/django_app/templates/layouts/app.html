@@ -73,6 +73,10 @@
             <p class="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{{ request.user.get_full_name|default:request.user.email }}</p>
             <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ request.user.email }}</p>
           </div>
+          <a href="{% url 'web:security' %}" class="dropdown-item flex items-center gap-2">
+            {% ui_icon "key" "h-4 w-4" %}
+            <span>Security</span>
+          </a>
           <form method="post" action="{% url 'web:logout' %}">
             {% csrf_token %}
             <button type="submit" class="dropdown-item flex items-center gap-2">
@@ -86,6 +90,15 @@
     </header>
 
     <main class="flex-1">
+      {% if messages %}
+      <div class="mx-auto max-w-6xl space-y-3 px-6 pt-6">
+        {% for message in messages %}
+          {% if message.tags == "error" %}{% ui_alert message=message variant="danger" %}
+          {% elif message.tags == "warning" %}{% ui_alert message=message variant="warning" %}
+          {% else %}{% ui_alert message=message variant="success" %}{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

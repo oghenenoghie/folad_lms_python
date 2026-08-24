@@ -11,3 +11,12 @@ class WebLoginForm(forms.Form):
         label="Authenticator code",
         widget=forms.TextInput(attrs={**_INPUT_ATTRS, "autocomplete": "one-time-code"}),
     )
+
+
+class MFAVerifyForm(forms.Form):
+    code = forms.CharField(
+        label="Authenticator code",
+        widget=forms.TextInput(
+            attrs={**_INPUT_ATTRS, "autocomplete": "one-time-code", "autofocus": True, "maxlength": 6}
+        ),
+    )
