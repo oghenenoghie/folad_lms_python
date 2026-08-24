@@ -39,6 +39,10 @@ INSTALLED_APPS = [
 ]
 
 AUTH_USER_MODEL = "accounts.User"
+# See apps/accounts/backends.py: session-based auth (the admin login form)
+# needs a backend that can reload the user across the tenant-scoped
+# default manager.
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.TenantAwareModelBackend"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

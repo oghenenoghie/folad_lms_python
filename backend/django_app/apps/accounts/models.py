@@ -47,6 +47,26 @@ class User(AbstractBaseUser, BaseModel):
     def __str__(self) -> str:
         return self.email
 
+    # Django Admin (contrib.admin) calls these directly on the user object
+    # (has_module_permission() -> request.user.has_module_perms(...), etc.),
+    # and they don't exist unless a model inherits PermissionsMixin — which
+    # this model deliberately doesn't, since that would pull in Django's
+    # own Group/Permission tables alongside this app's own RBAC (Role,
+    # Permission, UserRole — see apps/accounts/permissions.py), duplicating
+    # the permission system for no benefit. Django Admin here is the
+    # platform ops console (§11 ARCHITECTURE.md), not the general app UI —
+    # every other role's authorization goes through the API's RBAC
+    # (require_permission()), so it's correct for Admin access to be
+    # is_superuser-gated only.
+    def has_perm(self, perm, obj=None) -> bool:
+        return self.is_active and self.is_superuser
+
+    def has_perms(self, perm_list, obj=None) -> bool:
+        return self.is_active and self.is_superuser
+
+    def has_module_perms(self, app_label) -> bool:
+        return self.is_active and self.is_superuser
+
 
 class Permission(models.Model):
     """A `module.action` grant, e.g. `students.view` (§8 ARCHITECTURE.md)."""

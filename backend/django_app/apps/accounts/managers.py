@@ -9,6 +9,20 @@ class UserManager(TenantManager, BaseUserManager):
 
     use_in_migrations = True
 
+    def get_by_natural_key(self, email: str):
+        """Django's ModelBackend (session-based auth — the admin login
+        form, in particular) calls this on `_default_manager` to resolve
+        the user *before* authentication succeeds, so there is no tenant
+        context yet to scope by (TenantManager.get_queryset() would return
+        nothing and every login would fail, correct password or not).
+        Bypass tenant scoping for this one lookup via `all_tenants` — the
+        same escape hatch apps/accounts/authentication.py's JWTAuthentication
+        and auth_service.login() already use for the identical reason.
+        RBAC and object-level tenant checks still apply everywhere else via
+        the scoped `objects` manager.
+        """
+        return self.model.all_tenants.get(**{self.model.USERNAME_FIELD: email})
+
     def _create_user(self, email: str, password: str | None, **extra_fields):
         if not email:
             raise ValueError("User must have an email address")

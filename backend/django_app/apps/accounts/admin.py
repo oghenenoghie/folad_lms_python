@@ -1,12 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from apps.core.admin import TenantAdminMixin
+
 from .forms import UserChangeForm, UserCreationForm
 from .models import FailedLoginAttempt, LoginHistory, Permission, Role, RolePermission, User, UserRole
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
+class UserAdmin(TenantAdminMixin, DjangoUserAdmin):
     form = UserChangeForm
     add_form = UserCreationForm
     ordering = ["email"]
@@ -29,5 +31,11 @@ admin.site.register(Permission)
 admin.site.register(Role)
 admin.site.register(RolePermission)
 admin.site.register(UserRole)
-admin.site.register(LoginHistory)
 admin.site.register(FailedLoginAttempt)
+
+
+@admin.register(LoginHistory)
+class LoginHistoryAdmin(TenantAdminMixin, admin.ModelAdmin):
+    list_display = ["user", "organization", "ip_address", "success", "created_at"]
+    list_filter = ["success", "organization"]
+    search_fields = ["user__email", "ip_address"]
