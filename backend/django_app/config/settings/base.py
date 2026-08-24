@@ -43,13 +43,16 @@ INSTALLED_APPS = [
     "apps.students",
     "apps.staff",
     "apps.parents",
+    "apps.web",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
-# See apps/accounts/backends.py: session-based auth (the admin login form)
+# See apps/accounts/backends.py: session-based auth (the admin login form,
+# and now the server-rendered UI's own login — apps.web.views.WebLoginView)
 # needs a backend that can reload the user across the tenant-scoped
 # default manager.
 AUTHENTICATION_BACKENDS = ["apps.accounts.backends.TenantAwareModelBackend"]
+LOGIN_URL = "web:login"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -59,6 +62,11 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # See apps/web/middleware.py — activates RLS tenant context for
+    # session-authenticated `/app/` requests only. Must run after
+    # AuthenticationMiddleware (needs request.user resolved) and never
+    # touches /api/, /admin/, or /health/.
+    "apps.web.middleware.WebTenantContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -76,6 +84,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.web.context_processors.nav_items",
             ],
         },
     },

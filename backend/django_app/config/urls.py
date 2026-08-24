@@ -1,10 +1,15 @@
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from apps.core.views import HealthView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Bare domain root has no content of its own — the server-rendered UI
+    # lives under /app/ (see below), which itself redirects to /app/login
+    # for a signed-out visitor via LoginRequiredMixin.
+    path("", RedirectView.as_view(pattern_name="web:home", permanent=False)),
     # Railway healthcheck target (railway.toml). Same liveness probe as
     # /api/v1/health, kept under both paths since the latter is the
     # versioned API surface and the former is the deployment-platform
@@ -16,4 +21,7 @@ urlpatterns = [
     path("api/v1/", include("apps.students.urls")),
     path("api/v1/", include("apps.staff.urls")),
     path("api/v1/", include("apps.parents.urls")),
+    # Server-rendered UI (UI_MIGRATION_PLAN.md) — session-authenticated,
+    # entirely separate from the JWT-authenticated api/v1/ surface above.
+    path("app/", include("apps.web.urls")),
 ]

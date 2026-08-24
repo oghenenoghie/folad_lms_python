@@ -1,0 +1,39 @@
+{% extends "layouts/app.html" %}
+{% load ui_tags %}
+{% block title %}Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+{% ui_breadcrumbs breadcrumb_items %}
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-6xl space-y-6 p-6">
+  <div>
+    <h1 class="text-xl font-semibold">Dashboard</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+      {% if request.user.organization %}{{ request.user.organization.name }}{% else %}No organization on this account{% endif %}
+    </p>
+  </div>
+
+  {% if not request.user.organization %}
+    {% ui_alert message="This account isn't attached to an organization, so there's nothing tenant-scoped to show here." variant="warning" title="Platform-level account" %}
+  {% endif %}
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {% ui_card title="Students" %}
+      <p class="text-3xl font-semibold">{{ student_count }}</p>
+    {% end_ui_card %}
+    {% ui_card title="Staff" %}
+      <p class="text-3xl font-semibold">{{ staff_count }}</p>
+    {% end_ui_card %}
+    {% ui_card title="Teachers" %}
+      <p class="text-3xl font-semibold">{{ teacher_count }}</p>
+    {% end_ui_card %}
+    {% ui_card title="Guardians" %}
+      <p class="text-3xl font-semibold">{{ guardian_count }}</p>
+    {% end_ui_card %}
+  </div>
+
+  {% ui_alert message="This is a minimal, real-data landing page for Phase 3 (app shell). Phase 4 builds out the full permission-driven dashboard — see UI_MIGRATION_PLAN.md." variant="info" %}
+</div>
+{% endblock %}
