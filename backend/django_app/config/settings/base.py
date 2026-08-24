@@ -6,6 +6,10 @@ import dj_database_url
 import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+# `backend/django_app` — one level down from BASE_DIR (`backend/`). Templates
+# and static source live here, not at BASE_DIR, since `backend/fastapi_app`
+# is a sibling, unrelated service.
+DJANGO_APP_DIR = Path(__file__).resolve().parent.parent.parent
 
 env = environ.Env()
 env_file = BASE_DIR / ".env"
@@ -64,7 +68,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [DJANGO_APP_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -141,6 +145,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [DJANGO_APP_DIR / "static"]
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

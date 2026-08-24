@@ -1,0 +1,8 @@
+{% load ui_tags %}
+<div class="alert-{{ variant }}" role="alert">
+  {% ui_icon icon "h-5 w-5 shrink-0" %}
+  <div>
+    {% if title %}<p class="font-medium">{{ title }}</p>{% endif %}
+    <p{% if title %} class="mt-0.5"{% endif %}>{{ message }}</p>
+  </div>
+</div>

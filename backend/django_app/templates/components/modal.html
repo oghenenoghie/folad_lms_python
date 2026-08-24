@@ -1,0 +1,24 @@
+{% load ui_tags %}
+<div x-data="{ open: false }"
+     x-on:open-modal-{{ id }}.window="open = true"
+     x-on:keydown.escape.window="open = false"
+     x-cloak>
+  <template x-if="open">
+    <div>
+      <div class="modal-backdrop" x-on:click="open = false" x-transition.opacity></div>
+      <div class="modal-panel" x-transition>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="{{ id }}-title">
+          <div class="card-header">
+            <h3 id="{{ id }}-title" class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ title }}</h3>
+            <button type="button" class="btn-ghost !px-1.5 !py-1.5" x-on:click="open = false" aria-label="Close">
+              {% ui_icon "x" "h-4 w-4" %}
+            </button>
+          </div>
+          <div class="card-body">
+            {{ content }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>

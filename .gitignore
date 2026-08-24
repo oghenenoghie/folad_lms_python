@@ -16,6 +16,11 @@ media/
 db.sqlite3
 *.rdb
 
+# Tailwind CSS build output (compiled by the standalone CLI — see
+# infrastructure/docker/backend.Dockerfile — from theme_src/input.css).
+# Regenerated at build time, not committed, same as staticfiles/ above.
+backend/django_app/static/css/app.css
+
 # Node / Next.js
 node_modules/
 .next/

@@ -82,6 +82,20 @@ then need nothing but Python. Row-Level Security (part of Milestone 2) only runs
 so `pytest`'s RLS-specific tests will skip, but the app-layer tenant isolation still fully
 applies and the rest of the suite is unaffected.
 
+The server-rendered UI (Phase 2+, see `UI_MIGRATION_PLAN.md`) needs its CSS compiled once
+before `runserver` will serve real styling — `static/css/app.css` is a build artifact (like
+`staticfiles/`), not committed. No Node/npm required — it's the standalone Tailwind CLI binary:
+
+```bash
+curl -sSL -o /tmp/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.13/tailwindcss-linux-x64"  # or -arm64
+chmod +x /tmp/tailwindcss
+cd django_app && /tmp/tailwindcss -i theme_src/input.css -o static/css/app.css -c theme_src/tailwind.config.js --minify
+```
+
+Re-run that last command after editing `theme_src/input.css` or adding new template markup that
+uses new utility classes. `infrastructure/docker/backend.Dockerfile` does this automatically at
+image build time, so Docker/Railway deploys never need it done manually.
+
 Tests:
 
 ```bash

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% load ui_tags %}
+{% block title %}Design system{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-10 p-8">
+
+  <div class="flex items-center justify-between">
+    {% ui_breadcrumbs breadcrumb_items %}
+    <button class="btn-ghost" x-data x-on:click="dark = !dark">
+      {% ui_icon "sun" "h-4 w-4" %}
+      <span>Toggle theme</span>
+    </button>
+  </div>
+
+  <h1 class="text-2xl font-semibold">Design system</h1>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Buttons</h2>
+    <div class="flex flex-wrap items-center gap-3">
+      {% ui_button label="Primary" variant="primary" icon="plus" %}
+      {% ui_button label="Secondary" variant="secondary" %}
+      {% ui_button label="Danger" variant="danger" icon="trash-2" %}
+      {% ui_button label="Ghost" variant="ghost" %}
+      {% ui_button label="Disabled" variant="primary" disabled=True %}
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Badges</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      {% ui_badge label="Active" color="green" %}
+      {% ui_badge label="Inactive" color="gray" %}
+      {% ui_badge label="Suspended" color="red" %}
+      {% ui_badge label="Pending" color="yellow" %}
+      {% ui_badge label="Info" color="blue" %}
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Alerts</h2>
+    <div class="space-y-3">
+      {% ui_alert message="Everything is set up correctly." variant="success" title="Success" %}
+      {% ui_alert message="This action cannot be undone." variant="warning" title="Careful" %}
+      {% ui_alert message="Something went wrong saving this record." variant="danger" title="Error" %}
+      {% ui_alert message="You have read-only access to this module." variant="info" %}
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Cards</h2>
+    {% ui_card title="Student overview" %}
+      <p class="text-sm text-slate-600 dark:text-slate-400">Card body content goes here — any markup, since this uses a block tag rather than a fixed template.</p>
+    {% end_ui_card %}
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Avatars &amp; empty state</h2>
+    <div class="flex items-center gap-3">
+      {% ui_avatar name="Ada Okafor" %}
+      {% ui_avatar name="Chinedu Eze" size="h-12 w-12" %}
+    </div>
+    {% ui_empty_state title="No students yet" description="Students you add will show up here." icon="graduation-cap" %}
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Loading state</h2>
+    {% ui_loading %}
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Table &amp; pagination</h2>
+    <div class="table-wrap">
+      <table class="table-base">
+        <thead>
+          <tr><th>Name</th><th>Admission #</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ada Okafor</td><td>ADM-0001</td><td>{% ui_badge label="Active" color="green" %}</td></tr>
+          <tr><td>Chinedu Eze</td><td>ADM-0002</td><td>{% ui_badge label="Inactive" color="gray" %}</td></tr>
+        </tbody>
+      </table>
+      {% ui_pagination sample_page %}
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Dropdown &amp; modal</h2>
+    <div class="flex items-center gap-3">
+      {% ui_dropdown label="Actions" %}
+        <a href="#" class="dropdown-item">Edit</a>
+        <a href="#" class="dropdown-item">Archive</a>
+      {% end_ui_dropdown %}
+
+      <button class="btn-danger" x-data x-on:click="$dispatch('open-modal-demo')">
+        {% ui_icon "trash-2" "h-4 w-4" %}
+        <span>Delete student</span>
+      </button>
+    </div>
+
+    {% ui_modal id="demo" title="Delete student?" %}
+      <p class="text-sm text-slate-600 dark:text-slate-400">This will permanently remove the record. This action cannot be undone.</p>
+      <div class="mt-4 flex justify-end gap-2">
+        {% ui_button label="Cancel" variant="secondary" %}
+        {% ui_button label="Delete" variant="danger" %}
+      </div>
+    {% end_ui_modal %}
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium">Icons</h2>
+    <div class="flex flex-wrap gap-4 text-slate-500 dark:text-slate-400">
+      {% ui_icon "layout-dashboard" "h-6 w-6" %}
+      {% ui_icon "users" "h-6 w-6" %}
+      {% ui_icon "graduation-cap" "h-6 w-6" %}
+      {% ui_icon "briefcase" "h-6 w-6" %}
+      {% ui_icon "heart-handshake" "h-6 w-6" %}
+      {% ui_icon "building-2" "h-6 w-6" %}
+      {% ui_icon "shield" "h-6 w-6" %}
+      {% ui_icon "settings" "h-6 w-6" %}
+      {% ui_icon "bell" "h-6 w-6" %}
+      {% ui_icon "search" "h-6 w-6" %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}
