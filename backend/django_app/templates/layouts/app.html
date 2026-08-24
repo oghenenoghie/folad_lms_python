@@ -28,7 +28,7 @@
           {% for item in section.items %}
             {% if item.enabled %}
             <a href="{{ item.url }}"
-               class="{% if request.path == item.url %}nav-item-active{% else %}nav-item{% endif %}">
+               class="{% if item.active %}nav-item-active{% else %}nav-item{% endif %}">
               {% ui_icon item.icon "h-4 w-4" %}
               <span>{{ item.label }}</span>
             </a>

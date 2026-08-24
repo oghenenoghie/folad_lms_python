@@ -13,27 +13,42 @@ def nav_items(request):
     if not request.path.startswith("/app/"):
         return {}
 
-    return {
-        "nav_sections": [
-            {
-                "items": [
-                    {"label": "Dashboard", "icon": "layout-dashboard", "url": reverse("web:home"), "enabled": True},
-                ]
-            },
-            {
-                "heading": "School",
-                "items": [
-                    {"label": "Students", "icon": "graduation-cap", "enabled": False},
-                    {"label": "Staff & teachers", "icon": "briefcase", "enabled": False},
-                    {"label": "Parents & guardians", "icon": "heart-handshake", "enabled": False},
-                    {"label": "Schools & academics", "icon": "building-2", "enabled": False},
-                ]
-            },
-            {
-                "heading": "Administration",
-                "items": [
-                    {"label": "Users & roles", "icon": "shield", "enabled": False},
-                ]
-            },
-        ]
-    }
+    sections = [
+        {
+            "items": [
+                {"label": "Dashboard", "icon": "layout-dashboard", "url": reverse("web:home"), "enabled": True},
+            ]
+        },
+        {
+            "heading": "School",
+            "items": [
+                {"label": "Students", "icon": "graduation-cap", "enabled": False},
+                {"label": "Staff & teachers", "icon": "briefcase", "enabled": False},
+                {"label": "Parents & guardians", "icon": "heart-handshake", "enabled": False},
+                {
+                    "label": "Schools & academics",
+                    "icon": "building-2",
+                    "url": reverse("web:school-list"),
+                    "enabled": True,
+                },
+            ],
+        },
+        {
+            "heading": "Administration",
+            "items": [
+                {"label": "Users & roles", "icon": "shield", "enabled": False},
+            ],
+        },
+    ]
+
+    for section in sections:
+        for item in section["items"]:
+            url = item.get("url")
+            # Dashboard is exact-match only (every /app/ page's breadcrumb
+            # starts there) — every other item highlights for itself and
+            # anything nested under it (e.g. a school's own detail page).
+            item["active"] = bool(url) and (
+                request.path == url if url == reverse("web:home") else request.path.startswith(url)
+            )
+
+    return {"nav_sections": sections}
