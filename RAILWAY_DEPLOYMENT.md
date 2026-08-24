@@ -97,9 +97,12 @@ repo's own `.github/workflows/neon_workflow.yml` already uses
    `django-web` in the service settings. **Do not add a Postgres plugin/
    service to this project** — Neon remains the database.
 4. Confirm the service picks up `railway.toml` at the repo root (Railway
-   auto-detects it; the build/start/pre-deploy/healthcheck settings below
-   come from that file, not the dashboard, but you can view them under
-   Settings → Deploy).
+   auto-detects it; the build/start/healthcheck settings below come from
+   that file, not the dashboard, but you can view them under Settings →
+   Deploy). Also set the service's **Config-as-code file path** to
+   `railway.toml` explicitly if Railway doesn't pick it up on its own —
+   otherwise it defaults to auto-detected Nixpacks/Railpack, which
+   mis-detects this monorepo's Django app.
 5. Add a **Redis** service to the same Railway project (Railway's own Redis
    plugin is the simplest option: "+ New" → "Database" → "Add Redis").
    This is required per §0 above. It is not a violation of "only Neon for
@@ -137,7 +140,7 @@ them.
 Do **not** put any of these values into the repository. `backend/.env.example`
 documents the names only, with placeholder/example values.
 
-## 4. Build, pre-deploy, and start commands
+## 4. Build and start commands
 
 These are already defined in `railway.toml` at the repo root — you don't
 need to re-enter them in the dashboard, but they're listed here for
@@ -146,32 +149,57 @@ reference:
 - **Build**: Docker build from `infrastructure/docker/backend.Dockerfile`
   (`pip install .` against `backend/pyproject.toml`, plus a `collectstatic
   --noinput` baked into the image).
-- **Pre-deploy** (runs once per deploy, before traffic switches over):
+- **Start** (runs `migrate --noinput` then Gunicorn):
   ```
-  cd django_app && python manage.py migrate --noinput
-  ```
-- **Start**:
-  ```
-  cd django_app && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+  cd django_app && python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
   ```
 - **Healthcheck path**: `/health/`
+
+`migrate` runs as part of the start command rather than as a separate
+Railway "Pre-deploy command" step. It was originally a `preDeployCommand`
+(the more common pattern), but on this project that step type failed on
+every attempt with zero captured output anywhere — build logs, deploy
+logs, and Railway's own deployment Diagnosis all came back empty, and the
+failure persisted across a rebuilt service, a fresh Redis service, and
+confirmed-correct `DATABASE_URL`/credentials (verified directly against
+Neon, independent of Railway). Whatever caused it appears specific to
+that Railway step type, not to this app or Neon. Folding `migrate` into
+the start command sidesteps it entirely; `migrate --noinput` is
+idempotent (Django tracks applied migrations in `django_migrations`), so
+running it on every container start is safe — a no-op once the schema is
+current. If Railway resolves whatever was wrong with pre-deploy commands
+on this account, moving `migrate` back to `preDeployCommand` is a one-line
+change in `railway.toml`.
 
 None of these run `flush`, `makemigrations`, or anything else destructive.
 
 ## 5. Deploy
 
 Push to the branch Railway is tracking (or trigger a deploy from the
-dashboard). Railway will build the image, run the pre-deploy migration
-against Neon, then start Gunicorn.
+dashboard). Railway will build the image, then run `migrate` followed by
+Gunicorn as the start command.
 
 ## 6. Check Railway logs
 
-Service → **Deployments** → open the active deployment → **Logs**. Watch
-for the `migrate` output during pre-deploy and the Gunicorn startup line
-afterward. Uncaught Django exceptions are logged to stdout (see
-`LOGGING` in `config/settings/base.py`) and will appear here with a
-timestamp, level, and logger name — no passwords, tokens, or credentials
-are logged by any code path in this app.
+Service → **Deployments** → open the active deployment → **Deploy Logs**
+(not just "Details" — the Details tab summarizes step pass/fail but the
+actual log text lives under the Deploy tab). Watch for the `migrate`
+output at the top, then the Gunicorn startup line. Uncaught Django
+exceptions are logged to stdout (see `LOGGING` in
+`config/settings/base.py`) and will appear here with a timestamp, level,
+and logger name — no passwords, tokens, or credentials are logged by any
+code path in this app.
+
+If a deployment fails and Railway's own **Diagnosis** panel (on the
+deployment's Details tab) also fails to explain it (`Retry Diagnosis`
+comes back empty), that's a signal the failure is happening very early —
+before the process produces any output — rather than a normal Python
+exception. Check `railway-agent`/Deploy Logs for a `failureStage` and
+timing: a fast failure (a few seconds) with literally zero log lines
+across build, deploy, and Railway's own diagnosis is not something this
+app's code can explain by itself; treat it as a Railway platform/account
+issue (billing/plan gating, region capacity, scheduling) and check
+Railway's status page or contact support with the deployment ID.
 
 ## 7. Test `/health/`
 
@@ -256,8 +284,8 @@ check even though TLS itself is fine.
 
 ## 16. Future deployment workflow
 
-Every push to the tracked branch triggers: build → pre-deploy `migrate` →
-start. New migrations you commit run automatically on the next deploy;
+Every push to the tracked branch triggers: build → start (`migrate` then
+Gunicorn). New migrations you commit run automatically on the next deploy;
 nothing else is automatic. If you add a genuinely new required env var,
 add it to `backend/.env.example` in the same PR and set it in Railway
 before/at deploy time — the app will fail fast (via `env(...)`, no silent

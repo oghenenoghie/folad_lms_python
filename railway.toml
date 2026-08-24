@@ -16,10 +16,19 @@ builder = "DOCKERFILE"
 dockerfilePath = "infrastructure/docker/backend.Dockerfile"
 
 [deploy]
-# Runs once per deploy, before the new version receives traffic. Only
-# `migrate` — never `flush`, `makemigrations`, or anything destructive.
-preDeployCommand = "cd django_app && python manage.py migrate --noinput"
-startCommand = "cd django_app && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
+# `migrate --noinput` runs as part of the start command rather than as a
+# separate Railway "Pre-deploy command" step. It was originally a
+# preDeployCommand (the more common pattern — runs once before the new
+# version takes traffic), but on this project that specific step type
+# failed on every attempt with zero captured output anywhere (build logs,
+# deploy logs, and even Railway's own deployment Diagnosis all came back
+# empty), while the identical command placed in startCommand is expected
+# to log normally like any other container process. `migrate --noinput`
+# is idempotent (Django tracks applied migrations in django_migrations),
+# so running it on every start is safe — it's a no-op once the schema is
+# current. Only `migrate` — never `flush`, `makemigrations`, or anything
+# destructive.
+startCommand = "cd django_app && python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
 healthcheckPath = "/health/"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
