@@ -29,6 +29,9 @@ CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 INSTALLED_APPS = [
+    # Must load before django.contrib.admin — it overrides admin's
+    # templates/static, not the AdminSite itself, so no urls.py change.
+    "unfold",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -53,6 +56,15 @@ AUTH_USER_MODEL = "accounts.User"
 # default manager.
 AUTHENTICATION_BACKENDS = ["apps.accounts.backends.TenantAwareModelBackend"]
 LOGIN_URL = "web:login"
+
+# --- Django Admin theme (django-unfold) ---
+UNFOLD = {
+    "SITE_TITLE": "School Management System",
+    "SITE_HEADER": "School Management System",
+    "SITE_SYMBOL": "school",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": True,
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
