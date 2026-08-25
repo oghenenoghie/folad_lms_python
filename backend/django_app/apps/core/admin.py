@@ -1,4 +1,22 @@
 """Shared Django Admin utilities."""
+from django.conf import settings
+
+
+# UNFOLD["ENVIRONMENT"] / ["ENVIRONMENT_TITLE_PREFIX"] (config/settings/base.py).
+# Real callables rather than a value computed once in base.py, because
+# DEBUG there reflects only base.py's own default — dev.py/prod.py each
+# override it *after* `from .base import *`, so the true value is only
+# known once Django has finished loading whichever settings module was
+# actually selected. Reading settings.DEBUG lazily at request time (via
+# Unfold's dotted-path callback resolution) picks up that final value.
+# Staff who keep both a local admin and the production admin open in
+# adjacent tabs get a visible, hard-to-miss cue for which one they're in.
+def environment_badge(request):
+    return ("Development", "warning") if settings.DEBUG else ("Production", "danger")
+
+
+def environment_title_prefix(request):
+    return "[DEV] " if settings.DEBUG else ""
 
 
 class TenantAdminMixin:

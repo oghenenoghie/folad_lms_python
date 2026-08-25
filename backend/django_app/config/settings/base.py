@@ -67,9 +67,16 @@ UNFOLD = {
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
     "DASHBOARD_CALLBACK": "apps.core.dashboard.dashboard_callback",
+    "ENVIRONMENT": "apps.core.admin.environment_badge",
+    "ENVIRONMENT_TITLE_PREFIX": "apps.core.admin.environment_title_prefix",
     "SIDEBAR": {
         "show_all_applications": False,
+        "show_search": True,
         "navigation": UNFOLD_SIDEBAR_NAVIGATION,
+    },
+    "COMMAND": {
+        "search_models": True,
+        "show_history": True,
     },
 }
 
