@@ -20,11 +20,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ActionResult } from "@/lib/action-result";
+
+export type SelectOption = { value: string; label: string };
 
 export type FieldConfig<T extends FieldValues> =
   | { name: Path<T>; label: string; type: "text" | "email" | "date" | "number" }
-  | { name: Path<T>; label: string; type: "checkbox" };
+  | { name: Path<T>; label: string; type: "checkbox" }
+  | { name: Path<T>; label: string; type: "select"; options: SelectOption[]; placeholder?: string };
 
 export function EntityFormDialog<T extends FieldValues>({
   trigger,
@@ -103,6 +107,25 @@ export function EntityFormDialog<T extends FieldValues>({
                         <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
                       <FormLabel className="font-normal">{fieldConfig.label}</FormLabel>
+                    </FormItem>
+                  ) : fieldConfig.type === "select" ? (
+                    <FormItem>
+                      <FormLabel>{fieldConfig.label}</FormLabel>
+                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder={fieldConfig.placeholder} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {fieldConfig.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
                     </FormItem>
                   ) : (
                     <FormItem>
