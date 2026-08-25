@@ -32,7 +32,15 @@ dockerfilePath = "infrastructure/docker/backend.Dockerfile"
 # idempotent (Django tracks applied migrations in django_migrations), so
 # running it on every start is safe — a no-op once the schema is current.
 # Only `migrate` — never `flush`, `makemigrations`, or anything destructive.
-startCommand = "sh -c 'cd django_app && python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3'"
+#
+# `DATABASE_URL=$MIGRATE_DATABASE_URL` overrides the env var for just this
+# one command (POSIX `VAR=value cmd` scoping — gunicorn afterward still
+# sees the service's own DATABASE_URL). Schema migrations need DDL rights
+# (CREATE TABLE, ALTER TABLE, CREATE POLICY) that the live app's DB role
+# deliberately doesn't have — see docs/ARCHITECTURE.md §7: the app serves
+# traffic under a role RLS actually restricts (no BYPASSRLS), while
+# MIGRATE_DATABASE_URL is the table-owning role, used only here.
+startCommand = "sh -c 'cd django_app && DATABASE_URL=$MIGRATE_DATABASE_URL python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3'"
 healthcheckPath = "/health/"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"

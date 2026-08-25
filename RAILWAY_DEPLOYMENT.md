@@ -85,6 +85,19 @@ an explicit alias for the same value, matching the naming convention the
 repo's own `.github/workflows/neon_workflow.yml` already uses
 (`db_url` vs. `db_url_with_pooler`). You only need to set one of the two.
 
+**Two roles, two variables.** `DATABASE_URL` is what the live app (gunicorn)
+connects as — a least-privilege Neon role (`sms_app` in this project) with
+plain DML grants (`SELECT`/`INSERT`/`UPDATE`/`DELETE`) and no `BYPASSRLS`,
+so RLS actually protects it. Schema migrations need DDL rights
+(`CREATE TABLE`, `ALTER TABLE`, `CREATE POLICY`) that role deliberately
+doesn't have, so `railway.toml`'s start command runs `migrate --noinput`
+under a *second* variable, `MIGRATE_DATABASE_URL` — Neon's table-owning
+`neondb_owner` role — via a one-command env override
+(`DATABASE_URL=$MIGRATE_DATABASE_URL python manage.py migrate ...`); gunicorn
+afterward still sees the service's own `DATABASE_URL`. Set both as direct
+(non-pooler) connection strings, same as above. See `docs/ARCHITECTURE.md`
+§7 for why one role can't do both under `FORCE ROW LEVEL SECURITY`.
+
 ---
 
 ## 2. Railway project setup
@@ -120,7 +133,8 @@ Set these on the **Django web service** (not on the Redis service):
 | `DJANGO_DEBUG` | `False` | |
 | `DJANGO_ALLOWED_HOSTS` | `your-app.up.railway.app,healthcheck.railway.app` (add your custom domain later, comma-separated) | **Must include `healthcheck.railway.app`.** Railway's internal healthcheck prober sends that as the `Host` header — not your service's real domain — when hitting `/health/` before marking a deploy healthy. Without it, Django's `DisallowedHost` check rejects the probe and the deploy fails its healthcheck even though the app is otherwise working. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://your-app.up.railway.app` (add custom domain later) | Full origin incl. scheme, comma-separated, no trailing slash. |
-| `DATABASE_URL` | Neon **direct** connection string | See §1. Get it from the Neon console link at the top of this doc. |
+| `DATABASE_URL` | Neon **direct** connection string, least-privilege app role (`sms_app`) | See §1. This is what the live app serves traffic as — no `BYPASSRLS`. |
+| `MIGRATE_DATABASE_URL` | Neon **direct** connection string, table-owning role (`neondb_owner`) | See §1. Used only for the `migrate --noinput` step in `railway.toml`'s start command — never by the running app. |
 | `REDIS_URL` | your Railway Redis service's connection URL | Railway exposes this as a variable on the Redis service (`REDIS_URL` or similar) — reference it via Railway's variable-reference syntax (`${{Redis.REDIS_URL}}`) or copy it in manually. |
 | `DJANGO_TIME_ZONE` | `UTC` | Matches repo default; change if desired. |
 | `DJANGO_LOG_LEVEL` | `INFO` | |
