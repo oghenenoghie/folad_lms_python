@@ -79,6 +79,10 @@ MIDDLEWARE = [
     # AuthenticationMiddleware (needs request.user resolved) and never
     # touches /api/, /admin/, or /health/.
     "apps.web.middleware.WebTenantContextMiddleware",
+    # See apps/tenancy/middleware.py — the equivalent bridge for Django
+    # Admin's session auth, activating RLS's cross-tenant platform-mode
+    # escape hatch instead of a single organization. /admin/ only.
+    "apps.tenancy.middleware.AdminPlatformModeMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
