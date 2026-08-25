@@ -16,6 +16,11 @@ class TenantAdminMixin:
     and apps/accounts/authentication.py already use for the same reason.
     """
 
+    # created_by/updated_by (TimestampedModel) are set programmatically by
+    # the services layer, never by hand in the admin — read-only here so
+    # they render as plain text instead of an editable FK widget.
+    readonly_fields = ["created_by", "updated_by"]
+
     def get_queryset(self, request):
         qs = self.model.all_tenants.all()
         ordering = self.get_ordering(request)
