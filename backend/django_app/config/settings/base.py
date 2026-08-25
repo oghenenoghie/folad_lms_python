@@ -64,6 +64,7 @@ UNFOLD = {
     "SITE_SYMBOL": "school",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
+    "DASHBOARD_CALLBACK": "apps.core.dashboard.dashboard_callback",
 }
 
 MIDDLEWARE = [
