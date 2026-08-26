@@ -208,4 +208,44 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Attendance",
+        "items": [
+            {
+                "title": "Attendance",
+                "icon": "event_available",
+                "link": reverse_lazy("admin:attendance_attendance_changelist"),
+                "permission": _view_perm("attendance", "attendance"),
+            },
+            {
+                "title": "Attendance audit",
+                "icon": "fact_check",
+                "link": reverse_lazy("admin:attendance_attendanceaudit_changelist"),
+                "permission": _view_perm("attendance", "attendanceaudit"),
+            },
+        ],
+    },
+    {
+        "title": "Timetable",
+        "items": [
+            {
+                "title": "Rooms",
+                "icon": "meeting_room",
+                "link": reverse_lazy("admin:timetable_room_changelist"),
+                "permission": _view_perm("timetable", "room"),
+            },
+            {
+                "title": "Periods",
+                "icon": "schedule",
+                "link": reverse_lazy("admin:timetable_period_changelist"),
+                "permission": _view_perm("timetable", "period"),
+            },
+            {
+                "title": "Timetable slots",
+                "icon": "calendar_view_week",
+                "link": reverse_lazy("admin:timetable_timetableslot_changelist"),
+                "permission": _view_perm("timetable", "timetableslot"),
+            },
+        ],
+    },
 ]

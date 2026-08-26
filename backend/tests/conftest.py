@@ -299,3 +299,74 @@ def enrollment_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def attendance_factory(db):
+    from apps.attendance.models import Attendance
+    from apps.tenancy.context import activate_organization
+
+    def make(*, enrollment, date="2025-09-01", status="present", **extra):
+        activate_organization(enrollment.organization_id)
+        return Attendance.all_tenants.create(
+            organization=enrollment.organization,
+            enrollment=enrollment,
+            date=date,
+            status=status,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def room_factory(db):
+    from apps.timetable.models import Room
+    from apps.tenancy.context import activate_organization
+
+    def make(*, campus, name="Room 1", **extra):
+        activate_organization(campus.organization_id)
+        return Room.all_tenants.create(organization=campus.organization, campus=campus, name=name, **extra)
+
+    return make
+
+
+@pytest.fixture
+def period_factory(db):
+    from apps.timetable.models import Period
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Period 1", sequence=1, start_time="08:00", end_time="08:40", **extra):
+        activate_organization(school.organization_id)
+        return Period.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            name=name,
+            sequence=sequence,
+            start_time=start_time,
+            end_time=end_time,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def timetable_slot_factory(db):
+    from apps.timetable.models import TimetableSlot
+    from apps.tenancy.context import activate_organization
+
+    def make(*, class_subject, period, day_of_week="monday", room=None, **extra):
+        activate_organization(class_subject.organization_id)
+        return TimetableSlot.all_tenants.create(
+            organization=class_subject.organization,
+            class_subject=class_subject,
+            class_arm=class_subject.class_arm,
+            teacher=class_subject.teacher,
+            room=room,
+            day_of_week=day_of_week,
+            period=period,
+            **extra,
+        )
+
+    return make

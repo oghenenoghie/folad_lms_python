@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     "apps.staff",
     "apps.parents",
     "apps.academics",
+    "apps.attendance",
+    "apps.timetable",
     "apps.web",
 ]
 

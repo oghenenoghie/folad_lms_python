@@ -86,3 +86,24 @@ class TenantRetrieveUpdateDestroyAPIView(
 
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)
+
+
+class TenantListAPIView(EnvelopeListMixin, generics.GenericAPIView):
+    """Read-only list — for a resource with no client-facing create/update/
+    delete, e.g. a system-generated audit trail (apps.attendance's
+    AttendanceAudit)."""
+
+    pagination_class = EnvelopePageNumberPagination
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+
+class TenantRetrieveAPIView(EnvelopeRetrieveMixin, generics.GenericAPIView):
+    """Read-only detail — see TenantListAPIView."""
+
+    lookup_field = "public_id"
+    lookup_url_kwarg = "public_id"
+
+    def get(self, request, *args, **kwargs):
+        return self.retrieve(request, *args, **kwargs)
