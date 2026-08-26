@@ -3,6 +3,8 @@
 tenant-owned model under apps.schools already uses — both TenantManager and
 enable_rls() key on a literal `organization_id` column. `organization` is
 always derived server-side from `school`, never accepted from client input.
+GuardianStudent (the student<->guardian link) lives in `apps.parents`, not
+here — see that app's models.py.
 """
 from django.conf import settings
 from django.db import models
@@ -16,6 +18,12 @@ ENROLLMENT_STATUS_CHOICES = [
     ("graduated", "Graduated"),
     ("withdrawn", "Withdrawn"),
     ("suspended", "Suspended"),
+]
+
+GENDER_CHOICES = [
+    ("male", "Male"),
+    ("female", "Female"),
+    ("other", "Other"),
 ]
 
 
@@ -39,6 +47,7 @@ class Student(BaseModel):
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     date_of_birth = models.DateField()
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default="")
     enrollment_status = models.CharField(
         max_length=20, choices=ENROLLMENT_STATUS_CHOICES, default="active"
     )

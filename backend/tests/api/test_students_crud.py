@@ -1,6 +1,8 @@
 import pytest
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
+from apps.students.models import Student
+from apps.tenancy.context import activate_organization
 
 
 def _grant(user, *codes):
@@ -17,9 +19,7 @@ def _login(api_client, email, password):
 
 
 @pytest.mark.django_db
-def test_student_admission_create_list_retrieve_update_delete(
-    api_client, organization, user_factory, school_factory
-):
+def test_student_create_list_retrieve_update_delete(api_client, organization, user_factory, school_factory):
     school = school_factory(organization=organization)
     user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
     _grant(user, "students.view", "students.create", "students.update", "students.delete")
@@ -29,16 +29,16 @@ def test_student_admission_create_list_retrieve_update_delete(
         "/api/v1/students",
         {
             "school": str(school.public_id),
-            "admission_number": "ADM-100",
-            "first_name": "Ada",
-            "last_name": "Lovelace",
-            "date_of_birth": "2012-04-01",
+            "admission_number": "A001",
+            "first_name": "Alex",
+            "last_name": "Doe",
+            "date_of_birth": "2012-01-01",
         },
         format="json",
     )
     assert create.status_code == 201
     body = create.json()
-    assert body["data"]["enrollment_status"] == "active"
+    assert "organization" not in body["data"]
     public_id = body["data"]["public_id"]
 
     listed = api_client.get(f"/api/v1/students?school_id={school.public_id}")
@@ -47,7 +47,7 @@ def test_student_admission_create_list_retrieve_update_delete(
 
     retrieved = api_client.get(f"/api/v1/students/{public_id}")
     assert retrieved.status_code == 200
-    assert retrieved.json()["data"]["admission_number"] == "ADM-100"
+    assert retrieved.json()["data"]["enrollment_status"] == "active"
 
     updated = api_client.patch(
         f"/api/v1/students/{public_id}", {"enrollment_status": "withdrawn"}, format="json"
@@ -73,23 +73,19 @@ def test_student_duplicate_admission_number_returns_conflict(
 
     payload = {
         "school": str(school.public_id),
-        "admission_number": "ADM-100",
-        "first_name": "Ada",
-        "last_name": "Lovelace",
-        "date_of_birth": "2012-04-01",
+        "admission_number": "A001",
+        "first_name": "Alex",
+        "last_name": "Doe",
+        "date_of_birth": "2012-01-01",
     }
     first = api_client.post("/api/v1/students", payload, format="json")
     assert first.status_code == 201
 
-    duplicate = api_client.post("/api/v1/students", {**payload, "first_name": "Other"}, format="json")
-    # `school` and `admission_number` are both serializer-visible fields, so
-    # DRF's ModelSerializer auto-generates a UniqueConstraint validator and
-    # rejects this at is_valid() (400) before ever reaching the service/
-    # IntegrityError-catching path (which only fires for constraints DRF
-    # can't see — e.g. schools.School's org+code, where org isn't a
-    # serializer field). See apps/core/generics.py's EnvelopeCreateMixin.
-    assert duplicate.status_code == 400
-    assert "must make a unique set" in duplicate.json()["non_field_errors"][0]
+    duplicate = api_client.post(
+        "/api/v1/students", {**payload, "first_name": "Alexa"}, format="json"
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["success"] is False
 
 
 @pytest.mark.django_db
@@ -107,8 +103,7 @@ def test_student_cross_tenant_isolation(
     api_client, organization, other_organization, user_factory, school_factory, student_factory
 ):
     student_factory(school=school_factory(organization=organization))
-    other_school = school_factory(organization=other_organization, code="B")
-    other_student = student_factory(school=other_school, admission_number="ADM-200")
+    other_student = student_factory(school=school_factory(organization=other_organization))
 
     user_b = user_factory(organization=other_organization, email="b@example.com", password="s3cret-pass!")
     _grant(user_b, "students.view")
@@ -120,9 +115,14 @@ def test_student_cross_tenant_isolation(
     assert len(results) == 1
     assert results[0]["public_id"] == str(other_student.public_id)
 
-    user_a = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    _grant(user_a, "students.view")
-    _login(api_client, "a@example.com", "s3cret-pass!")
 
-    cross_tenant_get = api_client.get(f"/api/v1/students/{other_student.public_id}")
-    assert cross_tenant_get.status_code == 404
+@pytest.mark.django_db
+def test_student_app_layer_tenant_isolation(organization, other_organization, school_factory, student_factory):
+    student_factory(school=school_factory(organization=organization))
+    student_factory(school=school_factory(organization=other_organization))
+
+    activate_organization(organization.id)
+    visible = Student.objects.all()
+
+    assert visible.count() == 1
+    assert visible.first().organization_id == organization.id

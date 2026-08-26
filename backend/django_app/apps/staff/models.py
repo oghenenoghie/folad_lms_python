@@ -1,9 +1,12 @@
 """§4/§5/§18 ARCHITECTURE.md (Milestone 4: HR access controls). `Teacher` is
-a strict one-to-one specialization of `Staff` (§4 ERD: STAFF ||--o| TEACHER
-: is) — a teacher is always staff first; non-teaching staff have no Teacher
-row. Both models denormalize `organization` directly, matching every other
-tenant-owned model (TenantManager and enable_rls() key on a literal
-`organization_id` column).
+a one-to-one specialization of `Staff` (§4 ERD: STAFF ||--o| TEACHER : is).
+Both models denormalize `organization` directly, same convention as
+apps.schools/apps.students.
+
+Field names (`employee_number`, `position`, `date_joined`, the three-way
+`employment_status`) and the `staff_id`-filterable Teacher list match the
+already-shipped frontend's Staff & Teachers module contract (see
+frontend/src/lib/staff.ts, staff-forms.ts, actions/staff.ts).
 """
 from django.conf import settings
 from django.db import models
@@ -43,6 +46,8 @@ class Staff(BaseModel):
         max_length=20, choices=EMPLOYMENT_STATUS_CHOICES, default="active"
     )
     date_joined = models.DateField()
+    phone = models.CharField(max_length=32, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
 
     objects = TenantManager()
     all_tenants = models.Manager()

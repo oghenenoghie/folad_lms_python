@@ -6,8 +6,6 @@ from apps.students.models import Student
 
 
 def create_student(*, school: School, actor, **fields) -> Student:
-    """Admission: the act of creating this record *is* the admission ->
-    profile step (§18 M4 exit criteria)."""
     return Student.objects.create(
         organization=school.organization, school=school, created_by=actor, updated_by=actor, **fields
     )

@@ -1,6 +1,8 @@
 import pytest
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
+from apps.staff.models import Staff
+from apps.tenancy.context import activate_organization
 
 
 def _grant(user, *codes):
@@ -27,22 +29,26 @@ def test_staff_create_list_retrieve_update_delete(api_client, organization, user
         "/api/v1/staff",
         {
             "school": str(school.public_id),
-            "employee_number": "EMP-100",
-            "first_name": "Grace",
-            "last_name": "Hopper",
-            "position": "Mathematics Teacher",
+            "employee_number": "S001",
+            "first_name": "Sam",
+            "last_name": "Smith",
+            "position": "Registrar",
             "date_joined": "2020-01-01",
         },
         format="json",
     )
     assert create.status_code == 201
     body = create.json()
-    assert body["data"]["employment_status"] == "active"
+    assert "organization" not in body["data"]
     public_id = body["data"]["public_id"]
 
     listed = api_client.get(f"/api/v1/staff?school_id={school.public_id}")
     assert listed.status_code == 200
     assert listed.json()["data"]["pagination"]["total_count"] == 1
+
+    retrieved = api_client.get(f"/api/v1/staff/{public_id}")
+    assert retrieved.status_code == 200
+    assert retrieved.json()["data"]["employment_status"] == "active"
 
     updated = api_client.patch(
         f"/api/v1/staff/{public_id}", {"employment_status": "on_leave"}, format="json"
@@ -52,6 +58,9 @@ def test_staff_create_list_retrieve_update_delete(api_client, organization, user
 
     deleted = api_client.delete(f"/api/v1/staff/{public_id}")
     assert deleted.status_code == 200
+
+    gone = api_client.get(f"/api/v1/staff/{public_id}")
+    assert gone.status_code == 404
 
 
 @pytest.mark.django_db
@@ -65,22 +74,18 @@ def test_staff_duplicate_employee_number_returns_conflict(
 
     payload = {
         "school": str(school.public_id),
-        "employee_number": "EMP-100",
-        "first_name": "Grace",
-        "last_name": "Hopper",
-        "position": "Teacher",
+        "employee_number": "S001",
+        "first_name": "Sam",
+        "last_name": "Smith",
+        "position": "Registrar",
         "date_joined": "2020-01-01",
     }
     first = api_client.post("/api/v1/staff", payload, format="json")
     assert first.status_code == 201
 
-    duplicate = api_client.post("/api/v1/staff", {**payload, "first_name": "Other"}, format="json")
-    # `school` and `employee_number` are both serializer-visible fields, so
-    # DRF auto-generates a UniqueConstraint validator (400) before ever
-    # reaching the service/IntegrityError path — see test_students_crud.py's
-    # identical note.
-    assert duplicate.status_code == 400
-    assert "must make a unique set" in duplicate.json()["non_field_errors"][0]
+    duplicate = api_client.post("/api/v1/staff", {**payload, "first_name": "Samuel"}, format="json")
+    assert duplicate.status_code == 409
+    assert duplicate.json()["success"] is False
 
 
 @pytest.mark.django_db
@@ -94,32 +99,11 @@ def test_staff_permission_denied_without_role(api_client, organization, user_fac
 
 
 @pytest.mark.django_db
-def test_teacher_create_and_link_to_staff(api_client, organization, user_factory, school_factory, staff_factory):
-    staff = staff_factory(school=school_factory(organization=organization))
-    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    _grant(user, "teachers.view", "teachers.create")
-    _login(api_client, "a@example.com", "s3cret-pass!")
-
-    create = api_client.post(
-        "/api/v1/teachers",
-        {"staff": str(staff.public_id), "qualification": "B.Sc Mathematics", "specialization": "Algebra"},
-        format="json",
-    )
-    assert create.status_code == 201
-
-    listed = api_client.get(f"/api/v1/teachers?staff_id={staff.public_id}")
-    assert listed.status_code == 200
-    assert listed.json()["data"]["pagination"]["total_count"] == 1
-    assert listed.json()["data"]["results"][0]["specialization"] == "Algebra"
-
-
-@pytest.mark.django_db
 def test_staff_cross_tenant_isolation(
     api_client, organization, other_organization, user_factory, school_factory, staff_factory
 ):
     staff_factory(school=school_factory(organization=organization))
-    other_school = school_factory(organization=other_organization, code="B")
-    other_staff = staff_factory(school=other_school, employee_number="EMP-200")
+    other_staff = staff_factory(school=school_factory(organization=other_organization))
 
     user_b = user_factory(organization=other_organization, email="b@example.com", password="s3cret-pass!")
     _grant(user_b, "staff.view")
@@ -130,3 +114,45 @@ def test_staff_cross_tenant_isolation(
     results = listed.json()["data"]["results"]
     assert len(results) == 1
     assert results[0]["public_id"] == str(other_staff.public_id)
+
+
+@pytest.mark.django_db
+def test_staff_app_layer_tenant_isolation(organization, other_organization, school_factory, staff_factory):
+    staff_factory(school=school_factory(organization=organization))
+    staff_factory(school=school_factory(organization=other_organization))
+
+    activate_organization(organization.id)
+    visible = Staff.objects.all()
+
+    assert visible.count() == 1
+    assert visible.first().organization_id == organization.id
+
+
+@pytest.mark.django_db
+def test_teacher_profile_create_list_retrieve_delete(
+    api_client, organization, user_factory, school_factory, staff_factory
+):
+    staff = staff_factory(school=school_factory(organization=organization))
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "teachers.view", "teachers.create", "teachers.delete")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/teachers",
+        {"staff": str(staff.public_id), "qualification": "B.Ed", "specialization": "Mathematics"},
+        format="json",
+    )
+    assert create.status_code == 201
+    public_id = create.json()["data"]["public_id"]
+
+    listed = api_client.get("/api/v1/teachers")
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 1
+
+    duplicate = api_client.post(
+        "/api/v1/teachers", {"staff": str(staff.public_id), "qualification": "M.Ed"}, format="json"
+    )
+    assert duplicate.status_code == 409
+
+    deleted = api_client.delete(f"/api/v1/teachers/{public_id}")
+    assert deleted.status_code == 200

@@ -4,9 +4,9 @@ from django.utils import timezone
 from apps.parents.models import Guardian
 
 
-def create_guardian(*, organization, actor, **fields) -> Guardian:
+def create_guardian(*, actor, **fields) -> Guardian:
     return Guardian.objects.create(
-        organization=organization, created_by=actor, updated_by=actor, **fields
+        organization=actor.organization, created_by=actor, updated_by=actor, **fields
     )
 
 

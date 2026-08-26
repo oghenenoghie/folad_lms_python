@@ -132,8 +132,13 @@ def student_factory(db):
     from apps.tenancy.context import activate_organization
 
     def make(
-        *, school, admission_number="ADM-001", first_name="Ada", last_name="Lovelace",
-        date_of_birth="2012-01-01", **extra,
+        *,
+        school,
+        admission_number="A001",
+        first_name="Alex",
+        last_name="Doe",
+        date_of_birth="2012-01-01",
+        **extra,
     ):
         activate_organization(school.organization_id)
         return Student.all_tenants.create(
@@ -150,12 +155,30 @@ def student_factory(db):
 
 
 @pytest.fixture
+def guardian_student_factory(db):
+    from apps.parents.models import GuardianStudent
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, guardian, relationship_type="guardian", **extra):
+        activate_organization(student.organization_id)
+        return GuardianStudent.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            guardian=guardian,
+            relationship_type=relationship_type,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
 def staff_factory(db):
     from apps.staff.models import Staff
     from apps.tenancy.context import activate_organization
 
     def make(
-        *, school, employee_number="EMP-001", first_name="Grace", last_name="Hopper",
+        *, school, employee_number="EMP-001", first_name="Sam", last_name="Smith",
         position="Teacher", date_joined="2020-01-01", **extra,
     ):
         activate_organization(school.organization_id)
@@ -190,7 +213,7 @@ def guardian_factory(db):
     from apps.parents.models import Guardian
     from apps.tenancy.context import activate_organization
 
-    def make(*, organization, first_name="Sam", last_name="Okafor", **extra):
+    def make(*, organization, first_name="Jane", last_name="Doe", **extra):
         activate_organization(organization.id)
         return Guardian.all_tenants.create(
             organization=organization, first_name=first_name, last_name=last_name, **extra

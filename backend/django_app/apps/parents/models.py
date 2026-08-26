@@ -54,7 +54,7 @@ class GuardianStudent(BaseModel):
     relationship_type = models.CharField(
         max_length=20, choices=RELATIONSHIP_TYPE_CHOICES, default="guardian"
     )
-    is_primary_contact = models.BooleanField(default=False)
+    is_primary = models.BooleanField(default=False)
 
     objects = TenantManager()
     all_tenants = models.Manager()

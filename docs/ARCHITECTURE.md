@@ -2,7 +2,8 @@
 
 **Stack fork:** Standalone Python product (Django + FastAPI + PostgreSQL). Not part of the business-platform monorepo; does not use Supabase.
 
-**Status:** Architecture presentation. No application code is written until the instruction `START MILESTONE 1` is given.
+**Status:** Implementation underway. See `README.md` for the current milestone status; §18 below
+remains the roadmap this build follows.
 
 **Stated enterprise assumptions (override or ambiguity resolutions):**
 
@@ -573,4 +574,5 @@ school-management-system/
 
 ---
 
-*Architecture presented. Awaiting `START MILESTONE 1` to begin implementation with complete production-quality files.*
+*Architecture presented; implementation proceeds milestone by milestone per §18. See
+`README.md` for current status.*

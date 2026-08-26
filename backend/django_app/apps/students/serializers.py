@@ -26,5 +26,12 @@ class StudentSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "date_of_birth",
+            "gender",
             "enrollment_status",
         ]
+        # Both fields of uq_student_school_admission_number are serializer
+        # fields, so DRF would otherwise auto-add a UniqueTogetherValidator
+        # that bypasses the envelope with a raw 400 instead of the clean
+        # 409 the EnvelopeCreateMixin IntegrityError handler produces (see
+        # core/generics.py).
+        validators = []

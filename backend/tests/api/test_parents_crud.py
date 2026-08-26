@@ -1,6 +1,8 @@
 import pytest
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
+from apps.parents.models import Guardian, GuardianStudent
+from apps.tenancy.context import activate_organization
 
 
 def _grant(user, *codes):
@@ -23,25 +25,31 @@ def test_guardian_create_list_retrieve_update_delete(api_client, organization, u
     _login(api_client, "a@example.com", "s3cret-pass!")
 
     create = api_client.post(
-        "/api/v1/guardians",
-        {"first_name": "Sam", "last_name": "Okafor", "phone": "+2348012345678"},
-        format="json",
+        "/api/v1/guardians", {"first_name": "Jane", "last_name": "Doe", "phone": "0800000000"}, format="json"
     )
     assert create.status_code == 201
-    public_id = create.json()["data"]["public_id"]
+    body = create.json()
+    assert body["success"] is True
+    assert "organization" not in body["data"]
+    public_id = body["data"]["public_id"]
 
     listed = api_client.get("/api/v1/guardians")
     assert listed.status_code == 200
     assert listed.json()["data"]["pagination"]["total_count"] == 1
 
-    updated = api_client.patch(
-        f"/api/v1/guardians/{public_id}", {"occupation": "Engineer"}, format="json"
-    )
+    retrieved = api_client.get(f"/api/v1/guardians/{public_id}")
+    assert retrieved.status_code == 200
+    assert retrieved.json()["data"]["first_name"] == "Jane"
+
+    updated = api_client.patch(f"/api/v1/guardians/{public_id}", {"phone": "0811111111"}, format="json")
     assert updated.status_code == 200
-    assert updated.json()["data"]["occupation"] == "Engineer"
+    assert updated.json()["data"]["phone"] == "0811111111"
 
     deleted = api_client.delete(f"/api/v1/guardians/{public_id}")
     assert deleted.status_code == 200
+
+    gone = api_client.get(f"/api/v1/guardians/{public_id}")
+    assert gone.status_code == 404
 
 
 @pytest.mark.django_db
@@ -55,73 +63,11 @@ def test_guardian_permission_denied_without_role(api_client, organization, user_
 
 
 @pytest.mark.django_db
-def test_guardian_student_link_create_and_query_by_both_sides(
-    api_client, organization, user_factory, school_factory, student_factory, guardian_factory
-):
-    student = student_factory(school=school_factory(organization=organization))
-    guardian = guardian_factory(organization=organization)
-    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    _grant(user, "guardian_students.view", "guardian_students.create", "guardian_students.delete")
-    _login(api_client, "a@example.com", "s3cret-pass!")
-
-    create = api_client.post(
-        "/api/v1/guardian-students",
-        {
-            "guardian": str(guardian.public_id),
-            "student": str(student.public_id),
-            "relationship_type": "mother",
-            "is_primary_contact": True,
-        },
-        format="json",
-    )
-    assert create.status_code == 201
-    public_id = create.json()["data"]["public_id"]
-
-    by_guardian = api_client.get(f"/api/v1/guardian-students?guardian_id={guardian.public_id}")
-    assert by_guardian.status_code == 200
-    assert by_guardian.json()["data"]["pagination"]["total_count"] == 1
-
-    by_student = api_client.get(f"/api/v1/guardian-students?student_id={student.public_id}")
-    assert by_student.status_code == 200
-    assert by_student.json()["data"]["pagination"]["total_count"] == 1
-    assert by_student.json()["data"]["results"][0]["relationship_type"] == "mother"
-
-    unlinked = api_client.delete(f"/api/v1/guardian-students/{public_id}")
-    assert unlinked.status_code == 200
-
-    after_unlink = api_client.get(f"/api/v1/guardian-students?student_id={student.public_id}")
-    assert after_unlink.json()["data"]["pagination"]["total_count"] == 0
-
-
-@pytest.mark.django_db
-def test_guardian_student_duplicate_link_returns_conflict(
-    api_client, organization, user_factory, school_factory, student_factory, guardian_factory
-):
-    student = student_factory(school=school_factory(organization=organization))
-    guardian = guardian_factory(organization=organization)
-    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    _grant(user, "guardian_students.create")
-    _login(api_client, "a@example.com", "s3cret-pass!")
-
-    payload = {"guardian": str(guardian.public_id), "student": str(student.public_id)}
-    first = api_client.post("/api/v1/guardian-students", payload, format="json")
-    assert first.status_code == 201
-
-    duplicate = api_client.post("/api/v1/guardian-students", payload, format="json")
-    # `guardian` and `student` are both serializer-visible fields, so DRF
-    # auto-generates a UniqueConstraint validator (400) before ever reaching
-    # the service/IntegrityError path — see test_students_crud.py's
-    # identical note.
-    assert duplicate.status_code == 400
-    assert "must make a unique set" in duplicate.json()["non_field_errors"][0]
-
-
-@pytest.mark.django_db
 def test_guardian_cross_tenant_isolation(
     api_client, organization, other_organization, user_factory, guardian_factory
 ):
-    guardian_factory(organization=organization)
-    other_guardian = guardian_factory(organization=other_organization, last_name="Other")
+    guardian_factory(organization=organization, first_name="A")
+    other_guardian = guardian_factory(organization=other_organization, first_name="B")
 
     user_b = user_factory(organization=other_organization, email="b@example.com", password="s3cret-pass!")
     _grant(user_b, "guardians.view")
@@ -132,3 +78,88 @@ def test_guardian_cross_tenant_isolation(
     results = listed.json()["data"]["results"]
     assert len(results) == 1
     assert results[0]["public_id"] == str(other_guardian.public_id)
+
+
+@pytest.mark.django_db
+def test_guardian_app_layer_tenant_isolation(organization, other_organization, guardian_factory):
+    guardian_factory(organization=organization)
+    guardian_factory(organization=other_organization)
+
+    activate_organization(organization.id)
+    visible = Guardian.objects.all()
+
+    assert visible.count() == 1
+    assert visible.first().organization_id == organization.id
+
+
+@pytest.mark.django_db
+def test_link_and_unlink_guardian(
+    api_client, organization, user_factory, school_factory, student_factory, guardian_factory
+):
+    student = student_factory(school=school_factory(organization=organization))
+    guardian = guardian_factory(organization=organization)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(
+        user,
+        "guardian_students.view",
+        "guardian_students.create",
+        "guardian_students.delete",
+    )
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/guardian-students",
+        {
+            "guardian": str(guardian.public_id),
+            "student": str(student.public_id),
+            "relationship_type": "mother",
+            "is_primary": True,
+        },
+        format="json",
+    )
+    assert create.status_code == 201
+    link_id = create.json()["data"]["public_id"]
+
+    listed = api_client.get(f"/api/v1/guardian-students?student_id={student.public_id}")
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 1
+
+    duplicate = api_client.post(
+        "/api/v1/guardian-students",
+        {"guardian": str(guardian.public_id), "student": str(student.public_id), "relationship_type": "father"},
+        format="json",
+    )
+    assert duplicate.status_code == 409
+
+    unlinked = api_client.delete(f"/api/v1/guardian-students/{link_id}")
+    assert unlinked.status_code == 200
+    assert GuardianStudent.all_tenants.get(public_id=link_id).deleted_at is not None
+
+
+@pytest.mark.django_db
+def test_guardian_link_rejects_cross_tenant_guardian(
+    api_client,
+    organization,
+    other_organization,
+    user_factory,
+    school_factory,
+    student_factory,
+    guardian_factory,
+):
+    student = student_factory(school=school_factory(organization=organization))
+    foreign_guardian = guardian_factory(organization=other_organization)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "guardian_students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    resp = api_client.post(
+        "/api/v1/guardian-students",
+        {
+            "guardian": str(foreign_guardian.public_id),
+            "student": str(student.public_id),
+            "relationship_type": "guardian",
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400

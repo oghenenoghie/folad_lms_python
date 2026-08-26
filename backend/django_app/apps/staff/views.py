@@ -1,7 +1,8 @@
-"""Thin views, fat services (§11 ARCHITECTURE.md). Every list/detail view
-here filters out soft-deleted rows locally (`deleted_at__isnull=True`) —
-see apps/schools/views.py's identical note; not (yet) pushed into
-TenantManager since no other app needs it.
+"""Thin views, fat services (§11 ARCHITECTURE.md). `school` on Staff and
+`staff` on Teacher are write-required on create but stripped before
+update — re-parenting would leave a denormalized `organization` stale
+(see models.py), so that's a deliberate operation out of M4 scope, same
+convention as apps.schools.views.
 """
 from rest_framework.permissions import IsAuthenticated
 
@@ -19,9 +20,9 @@ class StaffListCreateView(TenantListCreateAPIView):
     def get_queryset(self):
         qs = Staff.objects.filter(deleted_at__isnull=True)
         school_id = self.request.query_params.get("school_id")
+        department_id = self.request.query_params.get("department_id")
         if school_id:
             qs = qs.filter(school__public_id=school_id)
-        department_id = self.request.query_params.get("department_id")
         if department_id:
             qs = qs.filter(department__public_id=department_id)
         return qs
@@ -65,6 +66,9 @@ class TeacherListCreateView(TenantListCreateAPIView):
         staff_id = self.request.query_params.get("staff_id")
         if staff_id:
             qs = qs.filter(staff__public_id=staff_id)
+        school_id = self.request.query_params.get("school_id")
+        if school_id:
+            qs = qs.filter(staff__school__public_id=school_id)
         return qs
 
     def get_permissions(self):
@@ -74,7 +78,9 @@ class TeacherListCreateView(TenantListCreateAPIView):
     def perform_create(self, serializer):
         data = dict(serializer.validated_data)
         staff = data.pop("staff")
-        serializer.instance = teacher_service.create_teacher(staff=staff, actor=self.request.user, **data)
+        serializer.instance = teacher_service.create_teacher_profile(
+            staff=staff, actor=self.request.user, **data
+        )
 
 
 class TeacherDetailView(TenantRetrieveUpdateDestroyAPIView):
@@ -92,7 +98,7 @@ class TeacherDetailView(TenantRetrieveUpdateDestroyAPIView):
     def perform_update(self, serializer):
         data = dict(serializer.validated_data)
         data.pop("staff", None)
-        teacher_service.update_teacher(teacher=serializer.instance, actor=self.request.user, **data)
+        teacher_service.update_teacher_profile(teacher=serializer.instance, actor=self.request.user, **data)
 
     def perform_destroy(self, instance):
-        teacher_service.delete_teacher(teacher=instance, actor=self.request.user)
+        teacher_service.delete_teacher_profile(teacher=instance, actor=self.request.user)

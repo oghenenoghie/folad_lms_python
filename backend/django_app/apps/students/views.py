@@ -1,7 +1,8 @@
-"""Thin views, fat services (§11 ARCHITECTURE.md). Every list/detail view
-here filters out soft-deleted rows locally (`deleted_at__isnull=True`) —
-see apps/schools/views.py's identical note; not (yet) pushed into
-TenantManager since no other app needs it.
+"""Thin views, fat services (§11 ARCHITECTURE.md). `school` on Student is
+write-required on create but stripped before update — re-parenting a
+student to a different school would leave its denormalized `organization`
+stale (see models.py), so a transfer is a deliberate operation out of M4
+scope, same convention as apps.schools.views.
 """
 from rest_framework.permissions import IsAuthenticated
 

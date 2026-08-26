@@ -8,7 +8,10 @@ from .models import Staff, Teacher
 
 
 class StaffSerializer(serializers.ModelSerializer):
-    # Managers, not `.all()` — see students/serializers.py's note on why.
+    # Managers, not `.all()` — DRF's RelatedField re-evaluates a bare
+    # manager's `.all()` lazily per-request, whereas a pre-built queryset
+    # would freeze TenantManager's org-scoping at import time (no request
+    # context yet), permanently baking in an empty set.
     school = PublicIdRelatedField(queryset=School.objects)
     department = PublicIdRelatedField(queryset=Department.objects, required=False, allow_null=True)
     user = PublicIdRelatedField(queryset=User.objects, required=False, allow_null=True)
@@ -23,10 +26,20 @@ class StaffSerializer(serializers.ModelSerializer):
             "employee_number",
             "first_name",
             "last_name",
+            "phone",
+            "email",
             "position",
             "employment_status",
             "date_joined",
         ]
+        # Both fields of the model's UniqueConstraint (school,
+        # employee_number) are serializer fields, so DRF would otherwise
+        # auto-add a UniqueTogetherValidator — bypassing the envelope with
+        # a raw 400 instead of the clean 409 the EnvelopeCreateMixin
+        # IntegrityError handler produces (see core/generics.py). Same
+        # convention as apps.schools, which avoids this by keeping the
+        # constrained `organization` field out of its serializers entirely.
+        validators = []
 
 
 class TeacherSerializer(serializers.ModelSerializer):

@@ -15,6 +15,6 @@ class GuardianAdmin(TenantAdminMixin, ModelAdmin):
 
 @admin.register(GuardianStudent)
 class GuardianStudentAdmin(TenantAdminMixin, ModelAdmin):
-    list_display = ["guardian", "student", "relationship_type", "is_primary_contact"]
-    list_filter = ["relationship_type", "is_primary_contact"]
+    list_display = ["guardian", "student", "relationship_type", "is_primary"]
+    list_filter = ["relationship_type", "is_primary"]
     autocomplete_fields = ["organization", "guardian", "student"]

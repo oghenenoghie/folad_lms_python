@@ -1,12 +1,7 @@
-"""Thin views, fat services (§11 ARCHITECTURE.md). Every list/detail view
-here filters out soft-deleted rows locally (`deleted_at__isnull=True`) —
-see apps/schools/views.py's identical note; not (yet) pushed into
-TenantManager since no other app needs it.
-"""
-from rest_framework.permissions import IsAuthenticated
-
+"""Thin views, fat services (§11 ARCHITECTURE.md)."""
 from apps.accounts.permissions import require_permission
 from apps.core.generics import TenantListCreateAPIView, TenantRetrieveUpdateDestroyAPIView
+from rest_framework.permissions import IsAuthenticated
 
 from .models import Guardian, GuardianStudent
 from .serializers import GuardianSerializer, GuardianStudentSerializer
@@ -17,7 +12,7 @@ class GuardianListCreateView(TenantListCreateAPIView):
     serializer_class = GuardianSerializer
 
     def get_queryset(self):
-        return Guardian.objects.filter(deleted_at__isnull=True)
+        return Guardian.objects.filter(deleted_at__isnull=True).order_by("last_name", "first_name")
 
     def get_permissions(self):
         code = "guardians.create" if self.request.method == "POST" else "guardians.view"
@@ -25,7 +20,7 @@ class GuardianListCreateView(TenantListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.instance = guardian_service.create_guardian(
-            organization=self.request.user.organization, actor=self.request.user, **serializer.validated_data
+            actor=self.request.user, **serializer.validated_data
         )
 
 
@@ -56,9 +51,9 @@ class GuardianStudentListCreateView(TenantListCreateAPIView):
     def get_queryset(self):
         qs = GuardianStudent.objects.filter(deleted_at__isnull=True)
         guardian_id = self.request.query_params.get("guardian_id")
+        student_id = self.request.query_params.get("student_id")
         if guardian_id:
             qs = qs.filter(guardian__public_id=guardian_id)
-        student_id = self.request.query_params.get("student_id")
         if student_id:
             qs = qs.filter(student__public_id=student_id)
         return qs
@@ -71,7 +66,7 @@ class GuardianStudentListCreateView(TenantListCreateAPIView):
         data = dict(serializer.validated_data)
         guardian = data.pop("guardian")
         student = data.pop("student")
-        serializer.instance = guardian_student_service.link_guardian_student(
+        serializer.instance = guardian_student_service.link_guardian(
             guardian=guardian, student=student, actor=self.request.user, **data
         )
 
@@ -94,9 +89,9 @@ class GuardianStudentDetailView(TenantRetrieveUpdateDestroyAPIView):
         data = dict(serializer.validated_data)
         data.pop("guardian", None)
         data.pop("student", None)
-        guardian_student_service.update_guardian_student(
+        guardian_student_service.update_guardian_link(
             link=serializer.instance, actor=self.request.user, **data
         )
 
     def perform_destroy(self, instance):
-        guardian_student_service.unlink_guardian_student(link=instance, actor=self.request.user)
+        guardian_student_service.unlink_guardian(link=instance, actor=self.request.user)
