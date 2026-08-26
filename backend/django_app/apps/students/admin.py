@@ -3,7 +3,7 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import TenantAdminMixin
 
-from .models import GuardianStudent, Student
+from .models import Student
 
 
 @admin.register(Student)
@@ -12,10 +12,3 @@ class StudentAdmin(TenantAdminMixin, ModelAdmin):
     search_fields = ["admission_number", "first_name", "last_name"]
     list_filter = ["enrollment_status", "school"]
     autocomplete_fields = ["organization", "school", "user"]
-
-
-@admin.register(GuardianStudent)
-class GuardianStudentAdmin(TenantAdminMixin, ModelAdmin):
-    list_display = ["guardian", "student", "relationship_type", "is_primary"]
-    list_filter = ["relationship_type", "is_primary"]
-    autocomplete_fields = ["organization", "guardian", "student"]

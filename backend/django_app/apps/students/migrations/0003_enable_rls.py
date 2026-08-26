@@ -10,5 +10,4 @@ class Migration(migrations.Migration):
 
     operations = [
         enable_rls("students_student"),
-        enable_rls("students_guardian_student"),
     ]

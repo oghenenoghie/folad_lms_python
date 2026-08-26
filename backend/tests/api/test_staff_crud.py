@@ -72,7 +72,14 @@ def test_staff_duplicate_employee_number_returns_conflict(
     _grant(user, "staff.create")
     _login(api_client, "a@example.com", "s3cret-pass!")
 
-    payload = {"school": str(school.public_id), "employee_number": "S001", "first_name": "Sam", "last_name": "Smith"}
+    payload = {
+        "school": str(school.public_id),
+        "employee_number": "S001",
+        "first_name": "Sam",
+        "last_name": "Smith",
+        "position": "Registrar",
+        "date_joined": "2020-01-01",
+    }
     first = api_client.post("/api/v1/staff", payload, format="json")
     assert first.status_code == 201
 

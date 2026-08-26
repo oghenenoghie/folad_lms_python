@@ -156,7 +156,7 @@ def student_factory(db):
 
 @pytest.fixture
 def guardian_student_factory(db):
-    from apps.students.models import GuardianStudent
+    from apps.parents.models import GuardianStudent
     from apps.tenancy.context import activate_organization
 
     def make(*, student, guardian, relationship_type="guardian", **extra):

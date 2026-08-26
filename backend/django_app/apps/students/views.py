@@ -9,9 +9,9 @@ from rest_framework.permissions import IsAuthenticated
 from apps.accounts.permissions import require_permission
 from apps.core.generics import TenantListCreateAPIView, TenantRetrieveUpdateDestroyAPIView
 
-from .models import GuardianStudent, Student
-from .serializers import GuardianStudentSerializer, StudentSerializer
-from .services import guardian_student_service, student_service
+from .models import Student
+from .serializers import StudentSerializer
+from .services import student_service
 
 
 class StudentListCreateView(TenantListCreateAPIView):
@@ -53,57 +53,3 @@ class StudentDetailView(TenantRetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         student_service.delete_student(student=instance, actor=self.request.user)
-
-
-class GuardianStudentListCreateView(TenantListCreateAPIView):
-    serializer_class = GuardianStudentSerializer
-
-    def get_queryset(self):
-        qs = GuardianStudent.objects.filter(deleted_at__isnull=True)
-        student_id = self.request.query_params.get("student_id")
-        guardian_id = self.request.query_params.get("guardian_id")
-        if student_id:
-            qs = qs.filter(student__public_id=student_id)
-        if guardian_id:
-            qs = qs.filter(guardian__public_id=guardian_id)
-        return qs
-
-    def get_permissions(self):
-        code = (
-            "student_guardians.create" if self.request.method == "POST" else "student_guardians.view"
-        )
-        return [IsAuthenticated(), require_permission(code)()]
-
-    def perform_create(self, serializer):
-        data = dict(serializer.validated_data)
-        student = data.pop("student")
-        guardian = data.pop("guardian")
-        serializer.instance = guardian_student_service.link_guardian(
-            student=student, guardian=guardian, actor=self.request.user, **data
-        )
-
-
-class GuardianStudentDetailView(TenantRetrieveUpdateDestroyAPIView):
-    serializer_class = GuardianStudentSerializer
-
-    def get_queryset(self):
-        return GuardianStudent.objects.filter(deleted_at__isnull=True)
-
-    def get_permissions(self):
-        code = {
-            "GET": "student_guardians.view",
-            "PATCH": "student_guardians.update",
-            "DELETE": "student_guardians.delete",
-        }[self.request.method]
-        return [IsAuthenticated(), require_permission(code)()]
-
-    def perform_update(self, serializer):
-        data = dict(serializer.validated_data)
-        data.pop("student", None)
-        data.pop("guardian", None)
-        guardian_student_service.update_guardian_link(
-            link=serializer.instance, actor=self.request.user, **data
-        )
-
-    def perform_destroy(self, instance):
-        guardian_student_service.unlink_guardian(link=instance, actor=self.request.user)

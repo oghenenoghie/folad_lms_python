@@ -5,10 +5,10 @@ CODES = [
     ("staff.create", "staff", "create", "Create staff"),
     ("staff.update", "staff", "update", "Update staff"),
     ("staff.delete", "staff", "delete", "Delete staff"),
-    ("teachers.view", "teachers", "view", "View teacher profiles"),
-    ("teachers.create", "teachers", "create", "Create a teacher profile for a staff member"),
-    ("teachers.update", "teachers", "update", "Update a teacher profile"),
-    ("teachers.delete", "teachers", "delete", "Delete a teacher profile"),
+    ("teachers.view", "teachers", "view", "View teachers"),
+    ("teachers.create", "teachers", "create", "Create teachers"),
+    ("teachers.update", "teachers", "update", "Update teachers"),
+    ("teachers.delete", "teachers", "delete", "Delete teachers"),
 ]
 
 

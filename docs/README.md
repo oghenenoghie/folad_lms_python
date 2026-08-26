@@ -81,7 +81,7 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Departments | `/departments`, `/departments/<public_id>` | Filter list by `?school_id=`. |
 | Guardians | `/guardians`, `/guardians/<public_id>` | Standalone person record, optionally linked to a login `User`. |
 | Students | `/students`, `/students/<public_id>` | Filter list by `?school_id=`; unique `admission_number` per school. |
-| Student-guardian links | `/student-guardians`, `/student-guardians/<public_id>` | Filter list by `?student_id=` or `?guardian_id=`; carries `relationship_type` + `is_primary`. |
+| Guardian-student links | `/guardian-students`, `/guardian-students/<public_id>` | Filter list by `?student_id=` or `?guardian_id=`; carries `relationship_type` + `is_primary`. |
 | Staff | `/staff`, `/staff/<public_id>` | Filter list by `?school_id=` or `?department_id=`; unique `employee_number` per school. |
 | Teachers | `/teachers`, `/teachers/<public_id>` | One-to-one specialization of an existing Staff record; filter list by `?staff_id=` or `?school_id=`. |
 

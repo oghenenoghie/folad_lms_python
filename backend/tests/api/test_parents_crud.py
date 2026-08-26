@@ -1,7 +1,7 @@
 import pytest
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
-from apps.parents.models import Guardian
+from apps.parents.models import Guardian, GuardianStudent
 from apps.tenancy.context import activate_organization
 
 
@@ -90,3 +90,76 @@ def test_guardian_app_layer_tenant_isolation(organization, other_organization, g
 
     assert visible.count() == 1
     assert visible.first().organization_id == organization.id
+
+
+@pytest.mark.django_db
+def test_link_and_unlink_guardian(
+    api_client, organization, user_factory, school_factory, student_factory, guardian_factory
+):
+    student = student_factory(school=school_factory(organization=organization))
+    guardian = guardian_factory(organization=organization)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(
+        user,
+        "guardian_students.view",
+        "guardian_students.create",
+        "guardian_students.delete",
+    )
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/guardian-students",
+        {
+            "guardian": str(guardian.public_id),
+            "student": str(student.public_id),
+            "relationship_type": "mother",
+            "is_primary": True,
+        },
+        format="json",
+    )
+    assert create.status_code == 201
+    link_id = create.json()["data"]["public_id"]
+
+    listed = api_client.get(f"/api/v1/guardian-students?student_id={student.public_id}")
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 1
+
+    duplicate = api_client.post(
+        "/api/v1/guardian-students",
+        {"guardian": str(guardian.public_id), "student": str(student.public_id), "relationship_type": "father"},
+        format="json",
+    )
+    assert duplicate.status_code == 409
+
+    unlinked = api_client.delete(f"/api/v1/guardian-students/{link_id}")
+    assert unlinked.status_code == 200
+    assert GuardianStudent.all_tenants.get(public_id=link_id).deleted_at is not None
+
+
+@pytest.mark.django_db
+def test_guardian_link_rejects_cross_tenant_guardian(
+    api_client,
+    organization,
+    other_organization,
+    user_factory,
+    school_factory,
+    student_factory,
+    guardian_factory,
+):
+    student = student_factory(school=school_factory(organization=organization))
+    foreign_guardian = guardian_factory(organization=other_organization)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "guardian_students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    resp = api_client.post(
+        "/api/v1/guardian-students",
+        {
+            "guardian": str(foreign_guardian.public_id),
+            "student": str(student.public_id),
+            "relationship_type": "guardian",
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400
