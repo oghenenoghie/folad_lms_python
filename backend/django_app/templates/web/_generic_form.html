@@ -1,0 +1,29 @@
+{% comment %}
+Reusable across every module's create/edit modal (Phase 6 onward) —
+iterates whatever fields the passed-in `form` has, so no per-model
+template is needed. `post_url` is supplied by the view.
+{% endcomment %}
+<form method="post" action="{{ post_url }}" hx-post="{{ post_url }}" hx-target="this" hx-swap="outerHTML" class="space-y-4">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div class="alert-danger">{{ form.non_field_errors.0 }}</div>
+  {% endif %}
+  {% for field in form %}
+    {% if field.field.widget.input_type == "checkbox" %}
+      <div class="flex items-center gap-2">
+        {{ field }}
+        <label class="text-sm text-slate-700 dark:text-slate-300" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      </div>
+    {% else %}
+      <div>
+        <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+      </div>
+    {% endif %}
+    {% if field.errors %}<p class="field-error">{{ field.errors.0 }}</p>{% endif %}
+  {% endfor %}
+  <div class="flex justify-end gap-2 pt-2">
+    <button type="button" class="btn-secondary" x-on:click="open = false">Cancel</button>
+    <button type="submit" class="btn-primary">Save</button>
+  </div>
+</form>

@@ -60,6 +60,11 @@ class Student(BaseModel):
         return f"{self.first_name} {self.last_name}"
 
 
+# Module-level alias for apps.web's dashboard (see apps/web/views/dashboard.py),
+# which renders the enrollment-status chart from this without importing Student itself.
+ENROLLMENT_STATUS_CHOICES = Student.EnrollmentStatus.choices
+
+
 class GuardianStudent(BaseModel):
     class RelationshipType(models.TextChoices):
         FATHER = "father", "Father"

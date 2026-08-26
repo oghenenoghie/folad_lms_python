@@ -1,0 +1,54 @@
+{% extends "layouts/app.html" %}
+{% load ui_tags %}
+{% block title %}Schools{% endblock %}
+
+{% block breadcrumbs %}
+{% ui_breadcrumbs breadcrumb_items %}
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6 p-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold">Schools</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Your organization's schools</p>
+    </div>
+    {% if can_create %}
+    <button type="button" x-data x-on:click="$dispatch('open-modal-new-school')" class="btn-primary">
+      {% ui_icon "plus" "h-4 w-4" %}
+      <span>New school</span>
+    </button>
+    {% endif %}
+  </div>
+
+  {% if schools %}
+  <div class="table-wrap">
+    <table class="table-base">
+      <thead>
+        <tr><th>Name</th><th>Code</th><th>Status</th><th class="w-1"></th></tr>
+      </thead>
+      <tbody>
+        {% for school in schools %}
+        <tr>
+          <td><a href="{% url 'web:school-detail' school.public_id %}" class="font-medium text-brand-600 hover:underline dark:text-brand-400">{{ school.name }}</a></td>
+          <td>{{ school.code }}</td>
+          <td>{% if school.is_active %}{% ui_badge label="Active" color="green" %}{% else %}{% ui_badge label="Inactive" color="gray" %}{% endif %}</td>
+          <td class="text-right">
+            <a href="{% url 'web:school-detail' school.public_id %}" class="btn-ghost !px-2 !py-1">{% ui_icon "eye" "h-4 w-4" %}</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {% ui_empty_state title="No schools yet" description="Create your organization's first school to get started." icon="building-2" %}
+  {% endif %}
+</div>
+
+{% if can_create %}
+{% ui_modal id="new-school" title="New school" %}
+  {% include "web/_generic_form.html" with form=create_form post_url=create_url %}
+{% end_ui_modal %}
+{% endif %}
+{% endblock %}

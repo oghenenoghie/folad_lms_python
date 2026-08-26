@@ -41,11 +41,12 @@ class Migration(migrations.Migration):
                     "deleted_at",
                     models.DateTimeField(blank=True, db_index=True, null=True),
                 ),
-                ("staff_number", models.CharField(max_length=50)),
+                ("employee_number", models.CharField(max_length=50)),
                 ("first_name", models.CharField(max_length=150)),
                 ("last_name", models.CharField(max_length=150)),
                 ("phone", models.CharField(blank=True, default="", max_length=32)),
                 ("email", models.EmailField(blank=True, default="", max_length=254)),
+                ("position", models.CharField(blank=True, default="", max_length=100)),
                 (
                     "employment_status",
                     models.CharField(
@@ -53,13 +54,12 @@ class Migration(migrations.Migration):
                             ("active", "Active"),
                             ("on_leave", "On leave"),
                             ("terminated", "Terminated"),
-                            ("retired", "Retired"),
                         ],
                         default="active",
                         max_length=20,
                     ),
                 ),
-                ("hire_date", models.DateField(blank=True, null=True)),
+                ("date_joined", models.DateField(blank=True, null=True)),
                 (
                     "created_by",
                     models.ForeignKey(
@@ -154,7 +154,6 @@ class Migration(migrations.Migration):
                     "specialization",
                     models.CharField(blank=True, default="", max_length=150),
                 ),
-                ("is_active", models.BooleanField(default=True)),
                 (
                     "created_by",
                     models.ForeignKey(
@@ -199,7 +198,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="staff",
             constraint=models.UniqueConstraint(
-                fields=("school", "staff_number"), name="uq_staff_school_staff_number"
+                fields=("school", "employee_number"), name="uq_staff_school_employee_number"
             ),
         ),
     ]

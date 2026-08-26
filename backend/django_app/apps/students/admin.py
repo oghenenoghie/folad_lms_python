@@ -1,6 +1,21 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
+
+from apps.core.admin import TenantAdminMixin
 
 from .models import GuardianStudent, Student
 
-admin.site.register(Student)
-admin.site.register(GuardianStudent)
+
+@admin.register(Student)
+class StudentAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["admission_number", "first_name", "last_name", "school", "enrollment_status"]
+    search_fields = ["admission_number", "first_name", "last_name"]
+    list_filter = ["enrollment_status", "school"]
+    autocomplete_fields = ["organization", "school", "user"]
+
+
+@admin.register(GuardianStudent)
+class GuardianStudentAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["guardian", "student", "relationship_type", "is_primary"]
+    list_filter = ["relationship_type", "is_primary"]
+    autocomplete_fields = ["organization", "guardian", "student"]

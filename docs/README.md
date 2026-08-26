@@ -1,9 +1,10 @@
 # School Management System
 
-Multi-tenant school management platform. API-driven — no frontend ships in this repo; any UI
-(web, mobile) is a separate client consuming the HTTP APIs below. See
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full system design, module breakdown, database
-catalogue, and milestone roadmap.
+Multi-tenant school management platform. The backend (`backend/`) is API-driven — see the
+endpoint tables below. Two UIs consume it: a session-authenticated, server-rendered Django UI
+under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a separate Next.js
+app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
+full system design, module breakdown, database catalogue, and milestone roadmap.
 
 **Status:** Milestone 4 (students, parents/guardians, staff, teachers) complete. Milestone 3
 (schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
@@ -81,8 +82,8 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Guardians | `/guardians`, `/guardians/<public_id>` | Standalone person record, optionally linked to a login `User`. |
 | Students | `/students`, `/students/<public_id>` | Filter list by `?school_id=`; unique `admission_number` per school. |
 | Student-guardian links | `/student-guardians`, `/student-guardians/<public_id>` | Filter list by `?student_id=` or `?guardian_id=`; carries `relationship_type` + `is_primary`. |
-| Staff | `/staff`, `/staff/<public_id>` | Filter list by `?school_id=` or `?department_id=`; unique `staff_number` per school. |
-| Teachers | `/teachers`, `/teachers/<public_id>` | One-to-one specialization of an existing Staff record; filter list by `?school_id=`. |
+| Staff | `/staff`, `/staff/<public_id>` | Filter list by `?school_id=` or `?department_id=`; unique `employee_number` per school. |
+| Teachers | `/teachers`, `/teachers/<public_id>` | One-to-one specialization of an existing Staff record; filter list by `?staff_id=` or `?school_id=`. |
 
 ## Local development (without Docker)
 
@@ -102,6 +103,20 @@ No local Postgres? Add `USE_SQLITE=true` to `backend/.env` — `manage.py migrat
 then need nothing but Python. Row-Level Security (part of Milestone 2) only runs on Postgres,
 so `pytest`'s RLS-specific tests will skip, but the app-layer tenant isolation still fully
 applies and the rest of the suite is unaffected.
+
+The server-rendered UI (Phase 2+, see `UI_MIGRATION_PLAN.md`) needs its CSS compiled once
+before `runserver` will serve real styling — `static/css/app.css` is a build artifact (like
+`staticfiles/`), not committed. No Node/npm required — it's the standalone Tailwind CLI binary:
+
+```bash
+curl -sSL -o /tmp/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.13/tailwindcss-linux-x64"  # or -arm64
+chmod +x /tmp/tailwindcss
+cd django_app && /tmp/tailwindcss -i theme_src/input.css -o static/css/app.css -c theme_src/tailwind.config.js --minify
+```
+
+Re-run that last command after editing `theme_src/input.css` or adding new template markup that
+uses new utility classes. `infrastructure/docker/backend.Dockerfile` does this automatically at
+image build time, so Docker/Railway deploys never need it done manually.
 
 Tests:
 

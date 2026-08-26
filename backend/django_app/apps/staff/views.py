@@ -63,6 +63,9 @@ class TeacherListCreateView(TenantListCreateAPIView):
 
     def get_queryset(self):
         qs = Teacher.objects.filter(deleted_at__isnull=True)
+        staff_id = self.request.query_params.get("staff_id")
+        if staff_id:
+            qs = qs.filter(staff__public_id=staff_id)
         school_id = self.request.query_params.get("school_id")
         if school_id:
             qs = qs.filter(staff__school__public_id=school_id)

@@ -1,0 +1,47 @@
+# Railway service config for the Django web app (backend/django_app).
+#
+# This repo is a monorepo (Django + FastAPI + Celery share one image, see
+# infrastructure/docker/backend.Dockerfile). Railway can't auto-detect a
+# Django app buried under backend/django_app with dependencies declared in
+# backend/pyproject.toml, so this file pins the build to the existing,
+# already-working Dockerfile rather than re-deriving a build pipeline.
+#
+# Only ONE Railway service should use this file: the Django web app.
+# It does not define a Postgres service (Neon, external, is the database —
+# see RAILWAY_DEPLOYMENT.md) and does not start Celery worker/beat or the
+# FastAPI edge service; those are out of scope for this deployment.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "infrastructure/docker/backend.Dockerfile"
+
+[deploy]
+# Root cause of every earlier deployment failure on this project, finally
+# confirmed via Railway's own deployment diagnosis: Railway invokes
+# startCommand/preDeployCommand directly (exec form), NOT through a shell.
+# `cd` is a shell builtin, not an executable, so any command starting
+# with `cd ...` fails immediately at the CREATE_CONTAINER stage with
+# "The executable `cd` could not be found" — and `&&` chaining needs a
+# shell too. Wrapping the whole thing in `sh -c '...'` fixes both.
+#
+# `migrate --noinput` runs as part of the start command rather than as a
+# separate Railway "Pre-deploy command" step, since that step type
+# produced zero captured output on every attempt (build logs, deploy
+# logs, and Railway's own Diagnosis all came back empty) even though the
+# underlying cause was this same shell issue. `migrate --noinput` is
+# idempotent (Django tracks applied migrations in django_migrations), so
+# running it on every start is safe — a no-op once the schema is current.
+# Only `migrate` — never `flush`, `makemigrations`, or anything destructive.
+#
+# `DATABASE_URL=$MIGRATE_DATABASE_URL` overrides the env var for just this
+# one command (POSIX `VAR=value cmd` scoping — gunicorn afterward still
+# sees the service's own DATABASE_URL). Schema migrations need DDL rights
+# (CREATE TABLE, ALTER TABLE, CREATE POLICY) that the live app's DB role
+# deliberately doesn't have — see docs/ARCHITECTURE.md §7: the app serves
+# traffic under a role RLS actually restricts (no BYPASSRLS), while
+# MIGRATE_DATABASE_URL is the table-owning role, used only here.
+startCommand = "sh -c 'cd django_app && DATABASE_URL=$MIGRATE_DATABASE_URL python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3'"
+healthcheckPath = "/health/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,26 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" x-data="{ dark: localStorage.getItem('theme') === 'dark' ||
+  (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches) }"
+      x-init="$watch('dark', v => { localStorage.setItem('theme', v ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', v) }); document.documentElement.classList.toggle('dark', dark)"
+      :class="{ 'dark': dark }">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site_name|default:"School Management System" }}{% endblock %}</title>
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script defer src="{% static 'vendor/alpine.min.js' %}"></script>
+  <script src="{% static 'vendor/htmx.min.js' %}"></script>
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_head %}{% endblock %}
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="min-h-screen font-sans" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  {% block body %}
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  {% endblock %}
+</body>
+</html>

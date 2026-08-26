@@ -29,9 +29,11 @@ def test_staff_create_list_retrieve_update_delete(api_client, organization, user
         "/api/v1/staff",
         {
             "school": str(school.public_id),
-            "staff_number": "S001",
+            "employee_number": "S001",
             "first_name": "Sam",
             "last_name": "Smith",
+            "position": "Registrar",
+            "date_joined": "2020-01-01",
         },
         format="json",
     )
@@ -62,7 +64,7 @@ def test_staff_create_list_retrieve_update_delete(api_client, organization, user
 
 
 @pytest.mark.django_db
-def test_staff_duplicate_staff_number_returns_conflict(
+def test_staff_duplicate_employee_number_returns_conflict(
     api_client, organization, user_factory, school_factory
 ):
     school = school_factory(organization=organization)
@@ -70,7 +72,7 @@ def test_staff_duplicate_staff_number_returns_conflict(
     _grant(user, "staff.create")
     _login(api_client, "a@example.com", "s3cret-pass!")
 
-    payload = {"school": str(school.public_id), "staff_number": "S001", "first_name": "Sam", "last_name": "Smith"}
+    payload = {"school": str(school.public_id), "employee_number": "S001", "first_name": "Sam", "last_name": "Smith"}
     first = api_client.post("/api/v1/staff", payload, format="json")
     assert first.status_code == 201
 

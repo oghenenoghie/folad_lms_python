@@ -1,4 +1,3 @@
-import pyotp
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
@@ -6,7 +5,7 @@ from apps.core.responses import envelope, error_envelope
 
 from . import jwt as jwt_lib
 from .serializers import LoginSerializer, MFAVerifySerializer, RefreshSerializer, UserSerializer
-from .services import auth_service
+from .services import auth_service, mfa_service
 
 
 def _client_ip(request) -> str | None:
@@ -91,11 +90,7 @@ class MFAEnrollView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = request.user
-        secret = pyotp.random_base32()
-        user.mfa_secret = secret
-        user.save(update_fields=["mfa_secret"])
-        uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="SMS")
+        secret, uri = mfa_service.start_enrollment(request.user)
         return envelope({"secret": secret, "otpauth_uri": uri}, message="scan with an authenticator app, then verify")
 
 
@@ -105,13 +100,12 @@ class MFAVerifyView(APIView):
     def post(self, request):
         serializer = MFAVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = request.user
 
-        if not user.mfa_secret:
-            return error_envelope("no MFA enrollment in progress", status=400)
-        if not auth_service.verify_totp(user.mfa_secret, serializer.validated_data["code"]):
-            return error_envelope("invalid MFA code", status=401)
+        try:
+            mfa_service.confirm_enrollment(user=request.user, code=serializer.validated_data["code"])
+        except mfa_service.MFANotInProgressError as exc:
+            return error_envelope(str(exc), status=400)
+        except mfa_service.MFAInvalidCodeError as exc:
+            return error_envelope(str(exc), status=401)
 
-        user.mfa_enabled = True
-        user.save(update_fields=["mfa_enabled"])
         return envelope(message="MFA enabled")

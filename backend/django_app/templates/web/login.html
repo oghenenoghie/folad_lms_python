@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load ui_tags %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="flex min-h-screen items-center justify-center px-4">
+  <div class="w-full max-w-sm">
+    <div class="mb-8 flex flex-col items-center gap-2">
+      {% ui_icon "school" "h-8 w-8 text-brand-600" %}
+      <h1 class="text-lg font-semibold">{{ site_name|default:"School Management" }}</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Sign in to your account</p>
+    </div>
+
+    {% if form.non_field_errors %}
+      {% for error in form.non_field_errors %}
+        {% ui_alert message=error variant="danger" %}
+      {% endfor %}
+      <div class="h-4"></div>
+    {% endif %}
+
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+
+      <div>
+        <label class="field-label" for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}
+        {% if form.email.errors %}<p class="field-error">{{ form.email.errors.0 }}</p>{% endif %}
+      </div>
+
+      <div>
+        <label class="field-label" for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+        {% if form.password.errors %}<p class="field-error">{{ form.password.errors.0 }}</p>{% endif %}
+      </div>
+
+      <div>
+        <label class="field-label" for="{{ form.totp_code.id_for_label }}">Authenticator code <span class="text-slate-400">(if enrolled)</span></label>
+        {{ form.totp_code }}
+        {% if form.totp_code.errors %}<p class="field-error">{{ form.totp_code.errors.0 }}</p>{% endif %}
+      </div>
+
+      <button type="submit" class="btn-primary w-full">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
