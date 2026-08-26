@@ -6,9 +6,10 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 4 (students, parents/guardians, staff, teachers) complete. Milestone 3
-(schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
-multi-tenancy), and Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
+**Status:** Milestone 5 (classes, sections, subjects, enrollment) complete. Milestone 4
+(students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses, academic years,
+terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1 (repo skeleton,
+Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -65,7 +66,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-4)
+## Domain APIs (Milestones 3-5)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -84,6 +85,11 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Guardian-student links | `/guardian-students`, `/guardian-students/<public_id>` | Filter list by `?student_id=` or `?guardian_id=`; carries `relationship_type` + `is_primary`. |
 | Staff | `/staff`, `/staff/<public_id>` | Filter list by `?school_id=` or `?department_id=`; unique `employee_number` per school. |
 | Teachers | `/teachers`, `/teachers/<public_id>` | One-to-one specialization of an existing Staff record; filter list by `?staff_id=` or `?school_id=`. |
+| Class levels | `/class-levels`, `/class-levels/<public_id>` | Grade under a campus; filter list by `?campus_id=`. |
+| Class arms | `/class-arms`, `/class-arms/<public_id>` | Section/stream under a class level; filter list by `?class_level_id=`. |
+| Subjects | `/subjects`, `/subjects/<public_id>` | Filter list by `?school_id=`; unique `code` per school. |
+| Class subjects | `/class-subjects`, `/class-subjects/<public_id>` | Arm x subject x teacher assignment; filter list by `?class_arm_id=`, `?subject_id=`, or `?teacher_id=`. |
+| Enrollments | `/enrollments`, `/enrollments/<public_id>` | Filter list by `?student_id=`, `?class_arm_id=`, or `?academic_year_id=`; one enrollment per student per academic year. |
 
 ## Local development (without Docker)
 
@@ -171,9 +177,10 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/tenancy/         #   Organization model, TenantManager, RLS migration helper, context
   apps/accounts/        #   User, RBAC (Role/Permission), JWT auth, MFA
   apps/schools/         #   School, Campus, AcademicYear, Term, Department
-  apps/parents/         #   Guardian
-  apps/students/        #   Student, GuardianStudent (student<->guardian link)
+  apps/parents/         #   Guardian, GuardianStudent (student<->guardian link)
+  apps/students/        #   Student
   apps/staff/           #   Staff, Teacher (one-to-one specialization of Staff)
+  apps/academics/       #   ClassLevel, ClassArm, Subject, ClassSubject, Enrollment
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -183,4 +190,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-M5 — classes, sections, subjects, enrollment (duplicate-prevention constraints).
+M6 — attendance, timetable (audit trail, conflict detection).

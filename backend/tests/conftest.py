@@ -220,3 +220,82 @@ def guardian_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def class_level_factory(db):
+    from apps.academics.models import ClassLevel
+    from apps.tenancy.context import activate_organization
+
+    def make(*, campus, name="Grade 1", sequence=1, **extra):
+        activate_organization(campus.organization_id)
+        return ClassLevel.all_tenants.create(
+            organization=campus.organization, campus=campus, name=name, sequence=sequence, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def class_arm_factory(db):
+    from apps.academics.models import ClassArm
+    from apps.tenancy.context import activate_organization
+
+    def make(*, class_level, name="A", **extra):
+        activate_organization(class_level.organization_id)
+        return ClassArm.all_tenants.create(
+            organization=class_level.organization, class_level=class_level, name=name, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def subject_factory(db):
+    from apps.academics.models import Subject
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Mathematics", code="MTH", **extra):
+        activate_organization(school.organization_id)
+        return Subject.all_tenants.create(
+            organization=school.organization, school=school, name=name, code=code, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def class_subject_factory(db):
+    from apps.academics.models import ClassSubject
+    from apps.tenancy.context import activate_organization
+
+    def make(*, class_arm, subject, teacher, **extra):
+        activate_organization(class_arm.organization_id)
+        return ClassSubject.all_tenants.create(
+            organization=class_arm.organization,
+            class_arm=class_arm,
+            subject=subject,
+            teacher=teacher,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def enrollment_factory(db):
+    from apps.academics.models import Enrollment
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, class_arm, academic_year, effective_from="2025-09-01", **extra):
+        activate_organization(student.organization_id)
+        return Enrollment.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            class_arm=class_arm,
+            academic_year=academic_year,
+            effective_from=effective_from,
+            **extra,
+        )
+
+    return make
