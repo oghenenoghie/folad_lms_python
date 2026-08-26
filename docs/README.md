@@ -5,8 +5,9 @@ Multi-tenant school management platform. API-driven — no frontend ships in thi
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full system design, module breakdown, database
 catalogue, and milestone roadmap.
 
-**Status:** Milestone 2 (auth, RBAC, multi-tenancy) complete. Milestone 1 (repo skeleton,
-Docker, env config, health/readiness) complete.
+**Status:** Milestone 4 (students, parents/guardians, staff, teachers) complete. Milestone 3
+(schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
+multi-tenancy), and Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -62,6 +63,26 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 `app.current_org` session variable (defence-in-depth — see §7 `ARCHITECTURE.md`). Both layers
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
+
+## Domain APIs (Milestones 3-4)
+
+All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
+tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
+(`?page=1&page_size=25`); create/update/delete return the standard envelope (§9
+`ARCHITECTURE.md`), with a 409 on a uniqueness conflict rather than a raw 500.
+
+| Resource | Endpoints | Notes |
+|---|---|---|
+| Schools | `/schools`, `/schools/<public_id>` | Tenant hierarchy root. |
+| Campuses | `/campuses`, `/campuses/<public_id>` | Filter list by `?school_id=`. |
+| Academic years | `/academic-years`, `/academic-years/<public_id>`, `.../activate` | `activate` atomically unsets the school's previous current year. |
+| Terms | `/terms`, `/terms/<public_id>`, `.../activate` | Filter list by `?academic_year_id=`; `activate` unsets the year's previous current term. |
+| Departments | `/departments`, `/departments/<public_id>` | Filter list by `?school_id=`. |
+| Guardians | `/guardians`, `/guardians/<public_id>` | Standalone person record, optionally linked to a login `User`. |
+| Students | `/students`, `/students/<public_id>` | Filter list by `?school_id=`; unique `admission_number` per school. |
+| Student-guardian links | `/student-guardians`, `/student-guardians/<public_id>` | Filter list by `?student_id=` or `?guardian_id=`; carries `relationship_type` + `is_primary`. |
+| Staff | `/staff`, `/staff/<public_id>` | Filter list by `?school_id=` or `?department_id=`; unique `staff_number` per school. |
+| Teachers | `/teachers`, `/teachers/<public_id>` | One-to-one specialization of an existing Staff record; filter list by `?school_id=`. |
 
 ## Local development (without Docker)
 
@@ -134,6 +155,10 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/core/            #   health/ready probes, shared abstract models, response envelope
   apps/tenancy/         #   Organization model, TenantManager, RLS migration helper, context
   apps/accounts/        #   User, RBAC (Role/Permission), JWT auth, MFA
+  apps/schools/         #   School, Campus, AcademicYear, Term, Department
+  apps/parents/         #   Guardian
+  apps/students/        #   Student, GuardianStudent (student<->guardian link)
+  apps/staff/           #   Staff, Teacher (one-to-one specialization of Staff)
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -143,4 +168,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-M3 — schools, campuses, academic years, terms, departments (tenant hierarchy CRUD under RBAC).
+M5 — classes, sections, subjects, enrollment (duplicate-prevention constraints).

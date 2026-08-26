@@ -9,7 +9,7 @@ from apps.accounts.permissions import get_user_permission_codes, require_permiss
 
 
 class _DummyView(APIView):
-    permission_classes = [IsAuthenticated, require_permission("students.view")]
+    permission_classes = [IsAuthenticated, require_permission("widgets.view")]
 
     def get(self, request):
         return Response({"ok": True})
@@ -29,7 +29,7 @@ def test_permission_denied_without_role(organization, user_factory):
 @pytest.mark.django_db
 def test_permission_allowed_with_role(organization, user_factory):
     user = user_factory(organization=organization)
-    perm = Permission.objects.create(code="students.view", module="students", action="view")
+    perm = Permission.objects.create(code="widgets.view", module="widgets", action="view")
     role = Role.objects.create(name="TEACHER", label="Teacher")
     RolePermission.objects.create(role=role, permission=perm)
     UserRole.objects.create(user=user, role=role)

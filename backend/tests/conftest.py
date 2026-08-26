@@ -124,3 +124,94 @@ def department_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def guardian_factory(db):
+    from apps.parents.models import Guardian
+    from apps.tenancy.context import activate_organization
+
+    def make(*, organization, first_name="Jane", last_name="Doe", **extra):
+        activate_organization(organization.id)
+        return Guardian.all_tenants.create(
+            organization=organization, first_name=first_name, last_name=last_name, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def student_factory(db):
+    from apps.students.models import Student
+    from apps.tenancy.context import activate_organization
+
+    def make(
+        *,
+        school,
+        admission_number="A001",
+        first_name="Alex",
+        last_name="Doe",
+        date_of_birth="2012-01-01",
+        **extra,
+    ):
+        activate_organization(school.organization_id)
+        return Student.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            admission_number=admission_number,
+            first_name=first_name,
+            last_name=last_name,
+            date_of_birth=date_of_birth,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def guardian_student_factory(db):
+    from apps.students.models import GuardianStudent
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, guardian, relationship_type="guardian", **extra):
+        activate_organization(student.organization_id)
+        return GuardianStudent.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            guardian=guardian,
+            relationship_type=relationship_type,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def staff_factory(db):
+    from apps.staff.models import Staff
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, staff_number="S001", first_name="Sam", last_name="Smith", **extra):
+        activate_organization(school.organization_id)
+        return Staff.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            staff_number=staff_number,
+            first_name=first_name,
+            last_name=last_name,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def teacher_factory(db):
+    from apps.staff.models import Teacher
+    from apps.tenancy.context import activate_organization
+
+    def make(*, staff, **extra):
+        activate_organization(staff.organization_id)
+        return Teacher.all_tenants.create(organization=staff.organization, staff=staff, **extra)
+
+    return make
