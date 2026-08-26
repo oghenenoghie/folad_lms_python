@@ -6,10 +6,10 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 5 (classes, sections, subjects, enrollment) complete. Milestone 4
-(students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses, academic years,
-terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1 (repo skeleton,
-Docker, env config, health/readiness) complete.
+**Status:** Milestone 6 (attendance, timetable) complete. Milestone 5 (classes, sections,
+subjects, enrollment), Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3
+(schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
+multi-tenancy), and Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -66,7 +66,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-5)
+## Domain APIs (Milestones 3-6)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -90,6 +90,11 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Subjects | `/subjects`, `/subjects/<public_id>` | Filter list by `?school_id=`; unique `code` per school. |
 | Class subjects | `/class-subjects`, `/class-subjects/<public_id>` | Arm x subject x teacher assignment; filter list by `?class_arm_id=`, `?subject_id=`, or `?teacher_id=`. |
 | Enrollments | `/enrollments`, `/enrollments/<public_id>` | Filter list by `?student_id=`, `?class_arm_id=`, or `?academic_year_id=`; one enrollment per student per academic year. |
+| Attendance | `/attendance`, `/attendance/<public_id>` | Filter list by `?enrollment_id=` or `?date=`; unique per enrollment per day. Every mark/correction writes an audit entry (see below). |
+| Attendance audit | `/attendance-audit` (read-only) | Filter by `?attendance_id=`; append-only at the DB level — a Postgres trigger rejects UPDATE/DELETE on this table entirely, not just at the API layer. |
+| Rooms | `/rooms`, `/rooms/<public_id>` | Filter list by `?campus_id=`. |
+| Periods | `/periods`, `/periods/<public_id>` | Filter list by `?school_id=`; unique `sequence` and `name` per school. |
+| Timetable slots | `/timetable-slots`, `/timetable-slots/<public_id>` | Filter list by `?class_arm_id=`, `?teacher_id=`, or `?room_id=`. `class_arm`/`teacher` are read-only, derived server-side from `class_subject`. Teacher/class-arm/room double-booking on the same day+period are real database constraints (409, not a soft check). |
 
 ## Local development (without Docker)
 
@@ -181,6 +186,8 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/students/        #   Student
   apps/staff/           #   Staff, Teacher (one-to-one specialization of Staff)
   apps/academics/       #   ClassLevel, ClassArm, Subject, ClassSubject, Enrollment
+  apps/attendance/      #   Attendance, AttendanceAudit (append-only via DB trigger)
+  apps/timetable/       #   Room, Period, TimetableSlot (conflict detection via DB constraints)
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -190,4 +197,5 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-M6 — attendance, timetable (audit trail, conflict detection).
+M7 — examinations, assessments, results, report cards (enter→submit→review→verify→publish
+workflow, PDF via Celery).
