@@ -173,4 +173,39 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Academics",
+        "items": [
+            {
+                "title": "Class levels",
+                "icon": "stairs",
+                "link": reverse_lazy("admin:academics_classlevel_changelist"),
+                "permission": _view_perm("academics", "classlevel"),
+            },
+            {
+                "title": "Class arms",
+                "icon": "meeting_room",
+                "link": reverse_lazy("admin:academics_classarm_changelist"),
+                "permission": _view_perm("academics", "classarm"),
+            },
+            {
+                "title": "Subjects",
+                "icon": "menu_book",
+                "link": reverse_lazy("admin:academics_subject_changelist"),
+                "permission": _view_perm("academics", "subject"),
+            },
+            {
+                "title": "Class subjects",
+                "icon": "auto_stories",
+                "link": reverse_lazy("admin:academics_classsubject_changelist"),
+                "permission": _view_perm("academics", "classsubject"),
+            },
+            {
+                "title": "Enrollments",
+                "icon": "how_to_reg",
+                "link": reverse_lazy("admin:academics_enrollment_changelist"),
+                "permission": _view_perm("academics", "enrollment"),
+            },
+        ],
+    },
 ]
