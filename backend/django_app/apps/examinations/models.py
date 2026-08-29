@@ -10,8 +10,14 @@ history pattern apps.attendance already established for Attendance/
 AttendanceAudit, including the same Postgres trigger
 (apps.tenancy.db.make_append_only) rather than just an application-layer
 convention. ReportCard tracks the async PDF-generation job (§18: "PDF
-report cards via Celery") for one student's one term. Every model
-denormalizes `organization` directly, same convention as every other app.
+report cards via Celery") for one student's one term. Question/
+QuestionOption/StudentAnswer add a question bank on top of Assessment:
+objective question types (multiple_choice/true_false) auto-grade from the
+QuestionOption marked correct, subjective types (short_answer/essay) are
+graded manually, and finalize_assessment_score rolls a student's answers
+up into their Result via the existing enter/update result_service
+functions rather than duplicating that logic. Every model denormalizes
+`organization` directly, same convention as every other app.
 """
 from django.conf import settings
 from django.db import models
@@ -42,6 +48,15 @@ REPORT_CARD_STATUS_CHOICES = [
     ("ready", "Ready"),
     ("failed", "Failed"),
 ]
+
+QUESTION_TYPE_CHOICES = [
+    ("multiple_choice", "Multiple Choice"),
+    ("true_false", "True/False"),
+    ("short_answer", "Short Answer"),
+    ("essay", "Essay"),
+]
+
+OBJECTIVE_QUESTION_TYPES = {"multiple_choice", "true_false"}
 
 
 class GradingScheme(BaseModel):
@@ -239,6 +254,96 @@ class ResultWorkflowState(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.result} : {self.previous_status or '(new)'} -> {self.new_status}"
+
+
+class Question(BaseModel):
+    """One gradable question on an Assessment's question bank. multiple_choice/
+    true_false are objective (auto-graded from the QuestionOption marked
+    is_correct); short_answer/essay are subjective (graded manually via
+    student_answer_service.grade_answer). See finalize_assessment_score for
+    how a student's answers roll up into their Result.score.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    assessment = models.ForeignKey(Assessment, on_delete=models.PROTECT, related_name="questions")
+    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES)
+    text = models.TextField()
+    marks = models.DecimalField(max_digits=5, decimal_places=2)
+    sequence = models.PositiveIntegerField()
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "examinations_question"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assessment", "sequence"], name="uq_question_assessment_sequence"
+            )
+        ]
+        ordering = ["assessment", "sequence"]
+
+    def __str__(self) -> str:
+        return f"{self.assessment} Q{self.sequence}"
+
+
+class QuestionOption(BaseModel):
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="options")
+    text = models.CharField(max_length=500)
+    is_correct = models.BooleanField(default=False)
+    sequence = models.PositiveIntegerField()
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "examinations_question_option"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["question", "sequence"], name="uq_question_option_question_sequence"
+            )
+        ]
+        ordering = ["question", "sequence"]
+
+    def __str__(self) -> str:
+        return f"{self.question} - option {self.sequence}"
+
+
+class StudentAnswer(BaseModel):
+    """One student's answer to one Question. `selected_option`/`is_correct`/
+    `marks_awarded` are set automatically at submission time for objective
+    question types; for subjective types they stay null until a teacher
+    calls student_answer_service.grade_answer.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="answers")
+    student = models.ForeignKey(
+        "students.Student", on_delete=models.PROTECT, related_name="exam_answers"
+    )
+    selected_option = models.ForeignKey(
+        QuestionOption, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    text_answer = models.TextField(blank=True, default="")
+    is_correct = models.BooleanField(null=True, blank=True)
+    marks_awarded = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    submitted_at = models.DateTimeField()
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "examinations_student_answer"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["question", "student"], name="uq_student_answer_question_student"
+            )
+        ]
+        ordering = ["-submitted_at"]
+
+    def __str__(self) -> str:
+        return f"{self.student} -> {self.question}"
 
 
 class ReportCard(BaseModel):

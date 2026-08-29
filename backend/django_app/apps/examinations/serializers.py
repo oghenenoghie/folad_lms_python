@@ -14,9 +14,12 @@ from .models import (
     GradeBand,
     GradingScheme,
     Invigilator,
+    Question,
+    QuestionOption,
     ReportCard,
     Result,
     ResultWorkflowState,
+    StudentAnswer,
 )
 
 
@@ -84,6 +87,47 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "weight",
             "max_score",
         ]
+        validators = []
+
+
+class QuestionSerializer(serializers.ModelSerializer):
+    assessment = PublicIdRelatedField(queryset=Assessment.objects)
+
+    class Meta:
+        model = Question
+        fields = ["public_id", "assessment", "question_type", "text", "marks", "sequence"]
+        validators = []
+
+
+class QuestionOptionSerializer(serializers.ModelSerializer):
+    question = PublicIdRelatedField(queryset=Question.objects)
+
+    class Meta:
+        model = QuestionOption
+        fields = ["public_id", "question", "text", "is_correct", "sequence"]
+        validators = []
+
+
+class StudentAnswerSerializer(serializers.ModelSerializer):
+    question = PublicIdRelatedField(queryset=Question.objects)
+    student = PublicIdRelatedField(queryset=Student.objects)
+    selected_option = PublicIdRelatedField(
+        queryset=QuestionOption.objects, required=False, allow_null=True
+    )
+
+    class Meta:
+        model = StudentAnswer
+        fields = [
+            "public_id",
+            "question",
+            "student",
+            "selected_option",
+            "text_answer",
+            "is_correct",
+            "marks_awarded",
+            "submitted_at",
+        ]
+        read_only_fields = ["is_correct", "marks_awarded", "submitted_at"]
         validators = []
 
 
