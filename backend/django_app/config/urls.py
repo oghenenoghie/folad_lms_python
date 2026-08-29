@@ -33,6 +33,8 @@ urlpatterns = [
     path("api/v1/", include("apps.assignments.urls")),
     path("api/v1/", include("apps.communication.urls")),
     path("api/v1/", include("apps.documents.urls")),
+    path("api/v1/", include("apps.dashboards.urls")),
+    path("api/v1/", include("apps.reports.urls")),
     # Server-rendered UI (UI_MIGRATION_PLAN.md) — session-authenticated,
     # entirely separate from the JWT-authenticated api/v1/ surface above.
     path("app/", include("apps.web.urls")),

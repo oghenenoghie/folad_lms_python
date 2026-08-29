@@ -569,4 +569,15 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Reports",
+        "items": [
+            {
+                "title": "Report requests",
+                "icon": "summarize",
+                "link": reverse_lazy("admin:reports_reportrequest_changelist"),
+                "permission": _view_perm("reports", "reportrequest"),
+            },
+        ],
+    },
 ]
