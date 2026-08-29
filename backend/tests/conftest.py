@@ -370,3 +370,163 @@ def timetable_slot_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def grading_scheme_factory(db):
+    from apps.examinations.models import GradingScheme
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Standard", is_default=True, **extra):
+        activate_organization(school.organization_id)
+        return GradingScheme.all_tenants.create(
+            organization=school.organization, school=school, name=name, is_default=is_default, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def grade_band_factory(db):
+    from apps.examinations.models import GradeBand
+    from apps.tenancy.context import activate_organization
+
+    def make(*, grading_scheme, grade="A", min_score="70.00", max_score="100.00", remark="Excellent", **extra):
+        activate_organization(grading_scheme.organization_id)
+        return GradeBand.all_tenants.create(
+            organization=grading_scheme.organization,
+            grading_scheme=grading_scheme,
+            grade=grade,
+            min_score=min_score,
+            max_score=max_score,
+            remark=remark,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def exam_factory(db):
+    from apps.examinations.models import Exam
+    from apps.tenancy.context import activate_organization
+
+    def make(*, term, name="First Term Exam", start_date="2025-12-01", end_date="2025-12-10", **extra):
+        activate_organization(term.organization_id)
+        return Exam.all_tenants.create(
+            organization=term.organization,
+            school=term.academic_year.school,
+            academic_year=term.academic_year,
+            term=term,
+            name=name,
+            start_date=start_date,
+            end_date=end_date,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def exam_schedule_factory(db):
+    from apps.examinations.models import ExamSchedule
+    from apps.tenancy.context import activate_organization
+
+    def make(
+        *, exam, class_subject, date="2025-12-02", start_time="09:00", end_time="11:00", **extra
+    ):
+        activate_organization(exam.organization_id)
+        return ExamSchedule.all_tenants.create(
+            organization=exam.organization,
+            exam=exam,
+            class_subject=class_subject,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def invigilator_factory(db):
+    from apps.examinations.models import Invigilator
+    from apps.tenancy.context import activate_organization
+
+    def make(*, exam_schedule, teacher, **extra):
+        activate_organization(exam_schedule.organization_id)
+        return Invigilator.all_tenants.create(
+            organization=exam_schedule.organization,
+            exam_schedule=exam_schedule,
+            teacher=teacher,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def assessment_factory(db):
+    from apps.examinations.models import Assessment
+    from apps.tenancy.context import activate_organization
+
+    def make(
+        *,
+        class_subject,
+        term,
+        name="Mid-term Test",
+        assessment_type="test",
+        weight="30.00",
+        max_score="100.00",
+        **extra,
+    ):
+        activate_organization(class_subject.organization_id)
+        return Assessment.all_tenants.create(
+            organization=class_subject.organization,
+            class_subject=class_subject,
+            term=term,
+            name=name,
+            assessment_type=assessment_type,
+            weight=weight,
+            max_score=max_score,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def result_factory(db):
+    from apps.examinations.models import Result
+    from apps.tenancy.context import activate_organization
+
+    def make(*, assessment, student, score="80.00", **extra):
+        activate_organization(assessment.organization_id)
+        return Result.all_tenants.create(
+            organization=assessment.organization,
+            assessment=assessment,
+            student=student,
+            score=score,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def report_card_factory(db):
+    from apps.examinations.models import ReportCard
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, term, **extra):
+        activate_organization(student.organization_id)
+        return ReportCard.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            academic_year=term.academic_year,
+            term=term,
+            **extra,
+        )
+
+    return make

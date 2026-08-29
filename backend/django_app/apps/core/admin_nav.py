@@ -248,4 +248,63 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Examinations",
+        "items": [
+            {
+                "title": "Grading schemes",
+                "icon": "rule_settings",
+                "link": reverse_lazy("admin:examinations_gradingscheme_changelist"),
+                "permission": _view_perm("examinations", "gradingscheme"),
+            },
+            {
+                "title": "Grade bands",
+                "icon": "grading",
+                "link": reverse_lazy("admin:examinations_gradeband_changelist"),
+                "permission": _view_perm("examinations", "gradeband"),
+            },
+            {
+                "title": "Exams",
+                "icon": "edit_note",
+                "link": reverse_lazy("admin:examinations_exam_changelist"),
+                "permission": _view_perm("examinations", "exam"),
+            },
+            {
+                "title": "Exam schedules",
+                "icon": "event",
+                "link": reverse_lazy("admin:examinations_examschedule_changelist"),
+                "permission": _view_perm("examinations", "examschedule"),
+            },
+            {
+                "title": "Invigilators",
+                "icon": "visibility",
+                "link": reverse_lazy("admin:examinations_invigilator_changelist"),
+                "permission": _view_perm("examinations", "invigilator"),
+            },
+            {
+                "title": "Assessments",
+                "icon": "assignment",
+                "link": reverse_lazy("admin:examinations_assessment_changelist"),
+                "permission": _view_perm("examinations", "assessment"),
+            },
+            {
+                "title": "Results",
+                "icon": "checklist",
+                "link": reverse_lazy("admin:examinations_result_changelist"),
+                "permission": _view_perm("examinations", "result"),
+            },
+            {
+                "title": "Result workflow history",
+                "icon": "history_edu",
+                "link": reverse_lazy("admin:examinations_resultworkflowstate_changelist"),
+                "permission": _view_perm("examinations", "resultworkflowstate"),
+            },
+            {
+                "title": "Report cards",
+                "icon": "description",
+                "link": reverse_lazy("admin:examinations_reportcard_changelist"),
+                "permission": _view_perm("examinations", "reportcard"),
+            },
+        ],
+    },
 ]

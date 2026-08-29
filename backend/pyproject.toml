@@ -30,6 +30,7 @@ dependencies = [
     "pyotp>=2.9,<2.10",
     "argon2-cffi>=23.1,<24.0",
     "django-unfold>=0.104.1",
+    "reportlab>=4.2,<4.3",
 ]
 
 [project.optional-dependencies]

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.academics",
     "apps.attendance",
     "apps.timetable",
+    "apps.examinations",
     "apps.web",
 ]
 
@@ -188,6 +189,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [DJANGO_APP_DIR / "static"]
+
+# Only actually used when STORAGE_BACKEND != "s3" (apps.core.storage's
+# local-dev/test fallback) — production always uploads to S3 directly.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "mediafiles"
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
