@@ -693,3 +693,272 @@ def receipt_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def library_book_factory(db):
+    from apps.library.models import LibraryBook
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, title="Learning Django", **extra):
+        activate_organization(school.organization_id)
+        return LibraryBook.all_tenants.create(
+            organization=school.organization, school=school, title=title, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def library_copy_factory(db):
+    from apps.library.models import LibraryCopy
+    from apps.tenancy.context import activate_organization
+
+    def make(*, book, copy_number="C-001", **extra):
+        activate_organization(book.organization_id)
+        return LibraryCopy.all_tenants.create(
+            organization=book.organization, book=book, copy_number=copy_number, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def library_member_factory(db):
+    from apps.library.models import LibraryMember
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, student=None, staff=None, membership_number="M-001", **extra):
+        activate_organization(school.organization_id)
+        member_type = "student" if student else "staff"
+        return LibraryMember.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            member_type=member_type,
+            student=student,
+            staff=staff,
+            membership_number=membership_number,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def library_loan_factory(db):
+    from apps.library.models import LibraryLoan
+    from apps.tenancy.context import activate_organization
+
+    def make(*, copy, member, borrowed_date="2025-09-01", due_date="2025-09-15", **extra):
+        activate_organization(copy.organization_id)
+        return LibraryLoan.all_tenants.create(
+            organization=copy.organization,
+            copy=copy,
+            member=member,
+            borrowed_date=borrowed_date,
+            due_date=due_date,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def inventory_item_factory(db):
+    from apps.inventory.models import InventoryItem
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Whiteboard Markers", sku="SKU-001", **extra):
+        activate_organization(school.organization_id)
+        return InventoryItem.all_tenants.create(
+            organization=school.organization, school=school, name=name, sku=sku, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def supplier_factory(db):
+    from apps.inventory.models import Supplier
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Acme Supplies", **extra):
+        activate_organization(school.organization_id)
+        return Supplier.all_tenants.create(
+            organization=school.organization, school=school, name=name, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def purchase_order_factory(db):
+    from apps.inventory.models import PurchaseOrder
+    from apps.tenancy.context import activate_organization
+
+    def make(*, item, supplier, order_number="PO-001", quantity_ordered=10, unit_cost_minor=500, **extra):
+        activate_organization(item.organization_id)
+        return PurchaseOrder.all_tenants.create(
+            organization=item.organization,
+            school=item.school,
+            supplier=supplier,
+            item=item,
+            order_number=order_number,
+            quantity_ordered=quantity_ordered,
+            unit_cost_minor=unit_cost_minor,
+            currency_code=item.organization.currency_code,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def vehicle_factory(db):
+    from apps.transport.models import Vehicle
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, registration_number="ABC-123", capacity=20, **extra):
+        activate_organization(school.organization_id)
+        return Vehicle.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            registration_number=registration_number,
+            capacity=capacity,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def transport_route_factory(db):
+    from apps.transport.models import TransportRoute
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="North Route", **extra):
+        activate_organization(school.organization_id)
+        return TransportRoute.all_tenants.create(
+            organization=school.organization, school=school, name=name, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def route_stop_factory(db):
+    from apps.transport.models import RouteStop
+    from apps.tenancy.context import activate_organization
+
+    def make(*, route, name="Main Gate", sequence=1, pickup_time="07:00", **extra):
+        activate_organization(route.organization_id)
+        return RouteStop.all_tenants.create(
+            organization=route.organization,
+            route=route,
+            name=name,
+            sequence=sequence,
+            pickup_time=pickup_time,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def transport_assignment_factory(db):
+    from apps.transport.models import TransportAssignment
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, vehicle, route, stop, academic_year, assigned_date="2025-09-01", **extra):
+        activate_organization(student.organization_id)
+        return TransportAssignment.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            vehicle=vehicle,
+            route=route,
+            stop=stop,
+            academic_year=academic_year,
+            assigned_date=assigned_date,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def hostel_factory(db):
+    from apps.hostel.models import Hostel
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="North Hostel", hostel_type="mixed", **extra):
+        activate_organization(school.organization_id)
+        return Hostel.all_tenants.create(
+            organization=school.organization, school=school, name=name, hostel_type=hostel_type, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def hostel_building_factory(db):
+    from apps.hostel.models import HostelBuilding
+    from apps.tenancy.context import activate_organization
+
+    def make(*, hostel, name="Block A", **extra):
+        activate_organization(hostel.organization_id)
+        return HostelBuilding.all_tenants.create(
+            organization=hostel.organization, hostel=hostel, name=name, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def hostel_room_factory(db):
+    from apps.hostel.models import HostelRoom
+    from apps.tenancy.context import activate_organization
+
+    def make(*, building, room_number="101", capacity=4, **extra):
+        activate_organization(building.organization_id)
+        return HostelRoom.all_tenants.create(
+            organization=building.organization,
+            building=building,
+            room_number=room_number,
+            capacity=capacity,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def hostel_bed_factory(db):
+    from apps.hostel.models import HostelBed
+    from apps.tenancy.context import activate_organization
+
+    def make(*, room, bed_number="A", **extra):
+        activate_organization(room.organization_id)
+        return HostelBed.all_tenants.create(
+            organization=room.organization, room=room, bed_number=bed_number, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def hostel_allocation_factory(db):
+    from apps.hostel.models import HostelAllocation
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, bed, academic_year, allocated_date="2025-09-01", **extra):
+        activate_organization(student.organization_id)
+        return HostelAllocation.all_tenants.create(
+            organization=student.organization,
+            student=student,
+            bed=bed,
+            academic_year=academic_year,
+            allocated_date=allocated_date,
+            **extra,
+        )
+
+    return make
