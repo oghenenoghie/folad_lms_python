@@ -16,12 +16,14 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import require_permission
 from apps.core.generics import (
     EnvelopeDestroyMixin,
+    EnvelopeRetrieveMixin,
     TenantListAPIView,
     TenantListCreateAPIView,
     TenantRetrieveAPIView,
     TenantRetrieveUpdateDestroyAPIView,
 )
 from apps.core.responses import envelope, error_envelope
+from apps.students.models import Student
 
 from .models import (
     Assessment,
@@ -30,9 +32,12 @@ from .models import (
     GradeBand,
     GradingScheme,
     Invigilator,
+    Question,
+    QuestionOption,
     ReportCard,
     Result,
     ResultWorkflowState,
+    StudentAnswer,
 )
 from .serializers import (
     AssessmentSerializer,
@@ -41,9 +46,12 @@ from .serializers import (
     GradeBandSerializer,
     GradingSchemeSerializer,
     InvigilatorSerializer,
+    QuestionOptionSerializer,
+    QuestionSerializer,
     ReportCardSerializer,
     ResultSerializer,
     ResultWorkflowStateSerializer,
+    StudentAnswerSerializer,
 )
 from .services import (
     assessment_service,
@@ -52,10 +60,14 @@ from .services import (
     grade_band_service,
     grading_scheme_service,
     invigilator_service,
+    question_option_service,
+    question_service,
     report_card_service,
     result_service,
+    student_answer_service,
 )
 from .services.result_service import InvalidResultTransition
+from .services.student_answer_service import InvalidAnswer
 
 
 class GradingSchemeListCreateView(TenantListCreateAPIView):
@@ -329,6 +341,202 @@ class AssessmentDetailView(TenantRetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         assessment_service.delete_assessment(assessment=instance, actor=self.request.user)
+
+
+class QuestionListCreateView(TenantListCreateAPIView):
+    serializer_class = QuestionSerializer
+
+    def get_queryset(self):
+        qs = Question.objects.filter(deleted_at__isnull=True)
+        assessment_id = self.request.query_params.get("assessment_id")
+        if assessment_id:
+            qs = qs.filter(assessment__public_id=assessment_id)
+        return qs
+
+    def get_permissions(self):
+        code = "questions.create" if self.request.method == "POST" else "questions.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_create(self, serializer):
+        data = dict(serializer.validated_data)
+        assessment = data.pop("assessment")
+        serializer.instance = question_service.create_question(
+            assessment=assessment, actor=self.request.user, **data
+        )
+
+
+class QuestionDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = QuestionSerializer
+
+    def get_queryset(self):
+        return Question.objects.filter(deleted_at__isnull=True)
+
+    def get_permissions(self):
+        code = {
+            "GET": "questions.view",
+            "PATCH": "questions.update",
+            "DELETE": "questions.delete",
+        }[self.request.method]
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_update(self, serializer):
+        data = dict(serializer.validated_data)
+        data.pop("assessment", None)
+        question_service.update_question(question=serializer.instance, actor=self.request.user, **data)
+
+    def perform_destroy(self, instance):
+        question_service.delete_question(question=instance, actor=self.request.user)
+
+
+class QuestionOptionListCreateView(TenantListCreateAPIView):
+    serializer_class = QuestionOptionSerializer
+
+    def get_queryset(self):
+        qs = QuestionOption.objects.filter(deleted_at__isnull=True)
+        question_id = self.request.query_params.get("question_id")
+        if question_id:
+            qs = qs.filter(question__public_id=question_id)
+        return qs
+
+    def get_permissions(self):
+        code = "question_options.create" if self.request.method == "POST" else "question_options.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_create(self, serializer):
+        data = dict(serializer.validated_data)
+        question = data.pop("question")
+        serializer.instance = question_option_service.create_question_option(
+            question=question, actor=self.request.user, **data
+        )
+
+
+class QuestionOptionDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = QuestionOptionSerializer
+
+    def get_queryset(self):
+        return QuestionOption.objects.filter(deleted_at__isnull=True)
+
+    def get_permissions(self):
+        code = {
+            "GET": "question_options.view",
+            "PATCH": "question_options.update",
+            "DELETE": "question_options.delete",
+        }[self.request.method]
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_update(self, serializer):
+        data = dict(serializer.validated_data)
+        data.pop("question", None)
+        question_option_service.update_question_option(
+            question_option=serializer.instance, actor=self.request.user, **data
+        )
+
+    def perform_destroy(self, instance):
+        question_option_service.delete_question_option(
+            question_option=instance, actor=self.request.user
+        )
+
+
+class StudentAnswerListCreateView(TenantListCreateAPIView):
+    serializer_class = StudentAnswerSerializer
+
+    def get_queryset(self):
+        qs = StudentAnswer.objects.filter(deleted_at__isnull=True)
+        question_id = self.request.query_params.get("question_id")
+        student_id = self.request.query_params.get("student_id")
+        if question_id:
+            qs = qs.filter(question__public_id=question_id)
+        if student_id:
+            qs = qs.filter(student__public_id=student_id)
+        return qs
+
+    def get_permissions(self):
+        code = "student_answers.create" if self.request.method == "POST" else "student_answers.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except InvalidAnswer as exc:
+            return error_envelope(str(exc), status=422)
+
+    def perform_create(self, serializer):
+        data = dict(serializer.validated_data)
+        question = data.pop("question")
+        student = data.pop("student")
+        serializer.instance = student_answer_service.submit_answer(
+            question=question, student=student, actor=self.request.user, **data
+        )
+
+
+class StudentAnswerDetailView(EnvelopeRetrieveMixin, EnvelopeDestroyMixin, generics.GenericAPIView):
+    serializer_class = StudentAnswerSerializer
+    lookup_field = "public_id"
+    lookup_url_kwarg = "public_id"
+
+    def get_queryset(self):
+        return StudentAnswer.objects.filter(deleted_at__isnull=True)
+
+    def get_permissions(self):
+        code = {"GET": "student_answers.view", "DELETE": "student_answers.delete"}[self.request.method]
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def get(self, request, *args, **kwargs):
+        return self.retrieve(request, *args, **kwargs)
+
+    def delete(self, request, *args, **kwargs):
+        return self.destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        student_answer_service.delete_answer(answer=instance, actor=self.request.user)
+
+
+class StudentAnswerGradeView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("student_answers.grade")()]
+
+    def post(self, request, public_id):
+        try:
+            answer = StudentAnswer.objects.filter(deleted_at__isnull=True).get(public_id=public_id)
+        except StudentAnswer.DoesNotExist:
+            return error_envelope("student answer not found", status=404)
+        if "marks_awarded" not in request.data:
+            return error_envelope("marks_awarded is required", status=400)
+        try:
+            answer = student_answer_service.grade_answer(
+                answer=answer,
+                actor=request.user,
+                marks_awarded=request.data["marks_awarded"],
+                is_correct=request.data.get("is_correct"),
+            )
+        except InvalidAnswer as exc:
+            return error_envelope(str(exc), status=422)
+        return envelope(StudentAnswerSerializer(answer).data, message="answer graded")
+
+
+class AssessmentFinalizeScoreView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("results.finalize")()]
+
+    def post(self, request, public_id):
+        try:
+            assessment = Assessment.objects.filter(deleted_at__isnull=True).get(public_id=public_id)
+        except Assessment.DoesNotExist:
+            return error_envelope("assessment not found", status=404)
+        student_public_id = request.data.get("student")
+        if not student_public_id:
+            return error_envelope("student is required", status=400)
+        try:
+            student = Student.objects.get(public_id=student_public_id)
+        except Student.DoesNotExist:
+            return error_envelope("student not found", status=404)
+        try:
+            result = student_answer_service.finalize_assessment_score(
+                assessment=assessment, student=student, actor=request.user
+            )
+        except (InvalidAnswer, InvalidResultTransition) as exc:
+            return error_envelope(str(exc), status=409)
+        return envelope(ResultSerializer(result).data, message="score finalized")
 
 
 class ResultListCreateView(TenantListCreateAPIView):

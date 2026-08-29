@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AssessmentDetailView,
+    AssessmentFinalizeScoreView,
     AssessmentListCreateView,
     ExamDetailView,
     ExamListCreateView,
@@ -13,6 +14,10 @@ from .views import (
     GradingSchemeListCreateView,
     InvigilatorDeleteView,
     InvigilatorListCreateView,
+    QuestionDetailView,
+    QuestionListCreateView,
+    QuestionOptionDetailView,
+    QuestionOptionListCreateView,
     ReportCardDetailView,
     ReportCardListCreateView,
     ResultDetailView,
@@ -22,6 +27,9 @@ from .views import (
     ResultSubmitView,
     ResultVerifyView,
     ResultWorkflowStateListView,
+    StudentAnswerDetailView,
+    StudentAnswerGradeView,
+    StudentAnswerListCreateView,
 )
 
 urlpatterns = [
@@ -45,6 +53,28 @@ urlpatterns = [
     path("invigilators/<uuid:public_id>", InvigilatorDeleteView.as_view(), name="invigilator-delete"),
     path("assessments", AssessmentListCreateView.as_view(), name="assessment-list-create"),
     path("assessments/<uuid:public_id>", AssessmentDetailView.as_view(), name="assessment-detail"),
+    path(
+        "assessments/<uuid:public_id>/finalize-score",
+        AssessmentFinalizeScoreView.as_view(),
+        name="assessment-finalize-score",
+    ),
+    path("questions", QuestionListCreateView.as_view(), name="question-list-create"),
+    path("questions/<uuid:public_id>", QuestionDetailView.as_view(), name="question-detail"),
+    path("question-options", QuestionOptionListCreateView.as_view(), name="question-option-list-create"),
+    path(
+        "question-options/<uuid:public_id>",
+        QuestionOptionDetailView.as_view(),
+        name="question-option-detail",
+    ),
+    path("student-answers", StudentAnswerListCreateView.as_view(), name="student-answer-list-create"),
+    path(
+        "student-answers/<uuid:public_id>", StudentAnswerDetailView.as_view(), name="student-answer-detail"
+    ),
+    path(
+        "student-answers/<uuid:public_id>/grade",
+        StudentAnswerGradeView.as_view(),
+        name="student-answer-grade",
+    ),
     path("results", ResultListCreateView.as_view(), name="result-list-create"),
     path("results/<uuid:public_id>", ResultDetailView.as_view(), name="result-detail"),
     path("results/<uuid:public_id>/submit", ResultSubmitView.as_view(), name="result-submit"),

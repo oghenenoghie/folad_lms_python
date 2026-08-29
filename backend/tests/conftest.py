@@ -533,6 +533,65 @@ def report_card_factory(db):
 
 
 @pytest.fixture
+def question_factory(db):
+    from apps.examinations.models import Question
+    from apps.tenancy.context import activate_organization
+
+    def make(*, assessment, question_type="multiple_choice", text="What is 2+2?", marks="10.00", sequence=1, **extra):
+        activate_organization(assessment.organization_id)
+        return Question.all_tenants.create(
+            organization=assessment.organization,
+            assessment=assessment,
+            question_type=question_type,
+            text=text,
+            marks=marks,
+            sequence=sequence,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def question_option_factory(db):
+    from apps.examinations.models import QuestionOption
+    from apps.tenancy.context import activate_organization
+
+    def make(*, question, text="Option", is_correct=False, sequence=1, **extra):
+        activate_organization(question.organization_id)
+        return QuestionOption.all_tenants.create(
+            organization=question.organization,
+            question=question,
+            text=text,
+            is_correct=is_correct,
+            sequence=sequence,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def student_answer_factory(db):
+    from django.utils import timezone
+
+    from apps.examinations.models import StudentAnswer
+    from apps.tenancy.context import activate_organization
+
+    def make(*, question, student, submitted_at=None, **extra):
+        activate_organization(question.organization_id)
+        return StudentAnswer.all_tenants.create(
+            organization=question.organization,
+            question=question,
+            student=student,
+            submitted_at=submitted_at or timezone.now(),
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
 def fee_structure_factory(db):
     from apps.finance.models import FeeStructure
     from apps.tenancy.context import activate_organization

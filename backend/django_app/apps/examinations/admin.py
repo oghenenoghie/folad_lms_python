@@ -10,9 +10,12 @@ from .models import (
     GradeBand,
     GradingScheme,
     Invigilator,
+    Question,
+    QuestionOption,
     ReportCard,
     Result,
     ResultWorkflowState,
+    StudentAnswer,
 )
 
 
@@ -59,6 +62,29 @@ class AssessmentAdmin(TenantAdminMixin, ModelAdmin):
     search_fields = ["name"]
     list_filter = ["assessment_type"]
     autocomplete_fields = ["organization", "class_subject", "term", "exam"]
+
+
+@admin.register(Question)
+class QuestionAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["assessment", "sequence", "question_type", "marks"]
+    search_fields = ["text"]
+    list_filter = ["question_type"]
+    autocomplete_fields = ["organization", "assessment"]
+
+
+@admin.register(QuestionOption)
+class QuestionOptionAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["question", "sequence", "text", "is_correct"]
+    search_fields = ["text"]
+    autocomplete_fields = ["organization", "question"]
+
+
+@admin.register(StudentAnswer)
+class StudentAnswerAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["student", "question", "is_correct", "marks_awarded", "submitted_at"]
+    search_fields = ["student__first_name", "student__last_name"]
+    list_filter = ["is_correct"]
+    autocomplete_fields = ["organization", "question", "student", "selected_option"]
 
 
 @admin.register(Result)

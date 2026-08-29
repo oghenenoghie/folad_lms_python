@@ -6,7 +6,10 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 11 (dashboards, analytics, reports) complete. Milestone 10 (assignments,
+**Status:** Exam question bank (Question/QuestionOption/StudentAnswer — auto-graded
+multiple_choice/true_false, manually graded short_answer/essay, and score finalization into
+`Result`) added on top of Milestone 7. Milestone 11 (dashboards, analytics, reports) complete.
+Milestone 10 (assignments,
 communication, notifications, documents), Milestone 9 (library, inventory, transport, hostel),
 Milestone 8 (fees, invoices, payments, receipts, finance reports), Milestone 7 (examinations,
 assessments, results, report cards), Milestone 6 (attendance, timetable), Milestone 5 (classes,
@@ -103,7 +106,10 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Exams | `/exams`, `/exams/<public_id>` | Filter list by `?term_id=`; `school`/`academic_year` are read-only, derived server-side from `term`. |
 | Exam schedules | `/exam-schedules`, `/exam-schedules/<public_id>` | Filter list by `?exam_id=`; one schedule per exam per class subject. |
 | Invigilators | `/invigilators`, `/invigilators/<public_id>` (create/delete only) | Filter list by `?exam_schedule_id=`; reassigning is unassign-then-assign, not an in-place edit. |
-| Assessments | `/assessments`, `/assessments/<public_id>` | Filter list by `?class_subject_id=` or `?term_id=`; a gradable item (test/quiz/assignment/project/practical/exam) on a class subject, optionally tied to an `Exam` header. |
+| Assessments | `/assessments`, `/assessments/<public_id>`, `.../finalize-score` | Filter list by `?class_subject_id=` or `?term_id=`; a gradable item (test/quiz/assignment/project/practical/exam) on a class subject, optionally tied to an `Exam` header. `finalize-score` (body `{"student": "<public_id>"}`) sums a student's graded `StudentAnswer.marks_awarded` for this assessment and enters/updates their `Result` (409 if any subjective answer is still ungraded, or the `Result` has moved past `entered`). |
+| Questions | `/questions`, `/questions/<public_id>` | Filter list by `?assessment_id=`; one question (`multiple_choice`/`true_false`/`short_answer`/`essay`) on an `Assessment`, ordered by `sequence`. |
+| Question options | `/question-options`, `/question-options/<public_id>` | Filter list by `?question_id=`; an answer choice for a `multiple_choice`/`true_false` question, one of which is flagged `is_correct`. |
+| Student answers | `/student-answers`, `/student-answers/<public_id>`, `.../grade` | Filter list by `?question_id=` or `?student_id=`. Submitting an answer to an objective question (`selected_option` required) auto-grades `is_correct`/`marks_awarded` immediately; a subjective question (`text_answer` required) leaves both null until `.../grade` (body `{"marks_awarded": ..., "is_correct": ...}`) is called — one answer per student per question (409 on a duplicate). |
 | Results | `/results`, `/results/<public_id>`, `.../submit`, `.../review`, `.../verify`, `.../publish` | Filter list by `?assessment_id=` or `?student_id=`. `score`/`grade`/`remark` are only editable while `status="entered"`; `grade`/`remark` auto-resolve from the school's default grading scheme. The four transition endpoints enforce strict sequential ordering (409 on a skip or out-of-order call) and each has its own permission code so duties can be separated across roles. |
 | Result workflow states | `/result-workflow-states` (read-only) | Filter by `?result_id=`; append-only at the DB level, same as attendance audit — every transition writes an immutable row here. |
 | Report cards | `/report-cards`, `/report-cards/<public_id>` (create + read-only) | Filter list by `?student_id=` or `?term_id=`; POST enqueues async PDF generation via Celery (`apps.examinations.tasks.reports.generate_report_card_pdf`) covering the student's published results for the term, storing the file through the provider-agnostic `apps.core.storage` abstraction (S3 in production, local filesystem in dev/CI). `status` moves `pending` -> `generating` -> `ready`/`failed`; no client-facing update — only the task writes `status`/`file_url`/`generated_at`/`error_message`. |
@@ -235,7 +241,9 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/attendance/      #   Attendance, AttendanceAudit (append-only via DB trigger)
   apps/timetable/       #   Room, Period, TimetableSlot (conflict detection via DB constraints)
   apps/examinations/    #   GradingScheme/GradeBand, Exam/ExamSchedule/Invigilator, Assessment,
-                        #   Result (enter->submit->review->verify->publish), ReportCard (PDF via Celery)
+                        #   Question/QuestionOption/StudentAnswer (auto/manual grading, score
+                        #   finalization into Result), Result (enter->submit->review->verify->publish),
+                        #   ReportCard (PDF via Celery)
   apps/finance/         #   FeeStructure/FeeItem, Discount/Scholarship, Invoice/InvoiceLine,
                         #   Payment, Refund (as reversal), Receipt (PDF via Celery),
                         #   LedgerEntry (double-entry, append-only via DB trigger)
