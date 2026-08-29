@@ -51,6 +51,10 @@ INSTALLED_APPS = [
     "apps.timetable",
     "apps.examinations",
     "apps.finance",
+    "apps.library",
+    "apps.inventory",
+    "apps.transport",
+    "apps.hostel",
     "apps.web",
 ]
 

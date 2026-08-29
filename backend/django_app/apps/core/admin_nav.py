@@ -372,4 +372,144 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Library",
+        "items": [
+            {
+                "title": "Books",
+                "icon": "menu_book",
+                "link": reverse_lazy("admin:library_librarybook_changelist"),
+                "permission": _view_perm("library", "librarybook"),
+            },
+            {
+                "title": "Copies",
+                "icon": "library_books",
+                "link": reverse_lazy("admin:library_librarycopy_changelist"),
+                "permission": _view_perm("library", "librarycopy"),
+            },
+            {
+                "title": "Members",
+                "icon": "badge",
+                "link": reverse_lazy("admin:library_librarymember_changelist"),
+                "permission": _view_perm("library", "librarymember"),
+            },
+            {
+                "title": "Loans",
+                "icon": "swap_horiz",
+                "link": reverse_lazy("admin:library_libraryloan_changelist"),
+                "permission": _view_perm("library", "libraryloan"),
+            },
+            {
+                "title": "Fines",
+                "icon": "paid",
+                "link": reverse_lazy("admin:library_libraryfine_changelist"),
+                "permission": _view_perm("library", "libraryfine"),
+            },
+        ],
+    },
+    {
+        "title": "Inventory",
+        "items": [
+            {
+                "title": "Items",
+                "icon": "inventory_2",
+                "link": reverse_lazy("admin:inventory_inventoryitem_changelist"),
+                "permission": _view_perm("inventory", "inventoryitem"),
+            },
+            {
+                "title": "Suppliers",
+                "icon": "local_shipping",
+                "link": reverse_lazy("admin:inventory_supplier_changelist"),
+                "permission": _view_perm("inventory", "supplier"),
+            },
+            {
+                "title": "Purchase orders",
+                "icon": "shopping_cart",
+                "link": reverse_lazy("admin:inventory_purchaseorder_changelist"),
+                "permission": _view_perm("inventory", "purchaseorder"),
+            },
+            {
+                "title": "Stock movements",
+                "icon": "sync_alt",
+                "link": reverse_lazy("admin:inventory_stockmovement_changelist"),
+                "permission": _view_perm("inventory", "stockmovement"),
+            },
+        ],
+    },
+    {
+        "title": "Transport",
+        "items": [
+            {
+                "title": "Vehicles",
+                "icon": "directions_bus",
+                "link": reverse_lazy("admin:transport_vehicle_changelist"),
+                "permission": _view_perm("transport", "vehicle"),
+            },
+            {
+                "title": "Routes",
+                "icon": "route",
+                "link": reverse_lazy("admin:transport_transportroute_changelist"),
+                "permission": _view_perm("transport", "transportroute"),
+            },
+            {
+                "title": "Route stops",
+                "icon": "location_on",
+                "link": reverse_lazy("admin:transport_routestop_changelist"),
+                "permission": _view_perm("transport", "routestop"),
+            },
+            {
+                "title": "Assignments",
+                "icon": "assignment_ind",
+                "link": reverse_lazy("admin:transport_transportassignment_changelist"),
+                "permission": _view_perm("transport", "transportassignment"),
+            },
+            {
+                "title": "Vehicle maintenance",
+                "icon": "build",
+                "link": reverse_lazy("admin:transport_vehiclemaintenance_changelist"),
+                "permission": _view_perm("transport", "vehiclemaintenance"),
+            },
+        ],
+    },
+    {
+        "title": "Hostel",
+        "items": [
+            {
+                "title": "Hostels",
+                "icon": "apartment",
+                "link": reverse_lazy("admin:hostel_hostel_changelist"),
+                "permission": _view_perm("hostel", "hostel"),
+            },
+            {
+                "title": "Buildings",
+                "icon": "domain",
+                "link": reverse_lazy("admin:hostel_hostelbuilding_changelist"),
+                "permission": _view_perm("hostel", "hostelbuilding"),
+            },
+            {
+                "title": "Rooms",
+                "icon": "meeting_room",
+                "link": reverse_lazy("admin:hostel_hostelroom_changelist"),
+                "permission": _view_perm("hostel", "hostelroom"),
+            },
+            {
+                "title": "Beds",
+                "icon": "bed",
+                "link": reverse_lazy("admin:hostel_hostelbed_changelist"),
+                "permission": _view_perm("hostel", "hostelbed"),
+            },
+            {
+                "title": "Allocations",
+                "icon": "how_to_reg",
+                "link": reverse_lazy("admin:hostel_hostelallocation_changelist"),
+                "permission": _view_perm("hostel", "hostelallocation"),
+            },
+            {
+                "title": "Incidents",
+                "icon": "report_problem",
+                "link": reverse_lazy("admin:hostel_hostelincident_changelist"),
+                "permission": _view_perm("hostel", "hostelincident"),
+            },
+        ],
+    },
 ]

@@ -6,12 +6,12 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 8 (fees, invoices, payments, receipts, finance reports) complete.
-Milestone 7 (examinations, assessments, results, report cards), Milestone 6 (attendance,
-timetable), Milestone 5 (classes, sections, subjects, enrollment), Milestone 4 (students,
-parents/guardians, staff, teachers), Milestone 3 (schools, campuses, academic years, terms,
-departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1 (repo skeleton, Docker,
-env config, health/readiness) complete.
+**Status:** Milestone 9 (library, inventory, transport, hostel) complete. Milestone 8 (fees,
+invoices, payments, receipts, finance reports), Milestone 7 (examinations, assessments, results,
+report cards), Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects,
+enrollment), Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools,
+campuses, academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and
+Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -68,7 +68,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-8)
+## Domain APIs (Milestones 3-9)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -116,6 +116,21 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Refunds | `/refunds`, `/refunds/<public_id>` (create + read-only) | Filter list by `?payment_id=`. Never edits the original `Payment` — posts the exact mirror of its ledger pair (debit/credit swapped) and recomputes the parent invoice's status from the net (paid − refunded) balance; rejects (409) a refund exceeding what's left refundable on the payment. |
 | Receipts | `/receipts`, `/receipts/<public_id>` (read-only) | Filter list by `?payment_id=`; one per payment, generated automatically by `payment_service.record_payment` — same async-PDF-via-Celery shape as report cards. |
 | Ledger entries | `/ledger-entries` (read-only) | Filter by `?school_id=`, `?ref_type=`, or `?ref_id=`; append-only double-entry trail — every `Invoice`/`Payment`/`Refund` posting writes exactly two balanced rows here, and a Postgres trigger rejects UPDATE/DELETE on this table entirely, same as attendance/result-workflow audit trails. |
+| Library books / copies | `/library-books`, `/library-books/<public_id>`; `/library-copies`, `/library-copies/<public_id>` | Filter copies by `?book_id=`; a copy's `status` is read-only, changed only by borrowing/returning/losing it (see loans below). |
+| Library members | `/library-members`, `/library-members/<public_id>` | Filter list by `?school_id=`; wraps either a `Student` or a `Staff` member — a DB check constraint enforces `member_type` matches which one is set. |
+| Library loans | `/library-loans`, `/library-loans/<public_id>` (create + read-only), `.../return`, `.../mark-lost` | Filter list by `?copy_id=` or `?member_id=`. A copy can only be on one open loan at a time — a real partial-unique DB constraint, not just an app-layer check (409 on a double-borrow). |
+| Library fines | `/library-fines`, `/library-fines/<public_id>` (create + read-only), `.../pay`, `.../waive` | Filter list by `?loan_id=`. |
+| Inventory items | `/inventory-items`, `/inventory-items/<public_id>` | Filter list by `?school_id=`; `quantity_on_hand` is read-only — it only ever changes via a `StockMovement` (see below). |
+| Suppliers | `/suppliers`, `/suppliers/<public_id>` | Filter list by `?school_id=`. |
+| Purchase orders | `/purchase-orders`, `/purchase-orders/<public_id>`, `.../mark-ordered`, `.../receive`, `.../cancel` | Filter list by `?item_id=` or `?status=`. One item per order; `receive` is what actually posts a `StockMovement` and moves real stock. |
+| Stock movements | `/stock-movements` (create + read-only) | Filter list by `?item_id=`; append-only at the DB level, same as the finance ledger. `quantity` carries its own sign (positive/negative), cross-checked against `movement_type` ("in"/"out"); a movement that would take stock negative is a 409. |
+| Vehicles | `/vehicles`, `/vehicles/<public_id>` | Filter list by `?school_id=`. |
+| Transport routes / stops | `/transport-routes`, `/transport-routes/<public_id>`; `/route-stops`, `/route-stops/<public_id>` | Filter stops by `?route_id=`. |
+| Transport assignments | `/transport-assignments`, `/transport-assignments/<public_id>` (create + read + unassign) | Filter list by `?student_id=` or `?vehicle_id=`. One active assignment per student per academic year is a real partial-unique DB constraint; vehicle seat capacity is enforced at the service layer with `select_for_update()` (409 past capacity). Reassigning a student is unassign-then-assign. |
+| Vehicle maintenance | `/vehicle-maintenance`, `/vehicle-maintenance/<public_id>` | Filter list by `?vehicle_id=`. |
+| Hostels / buildings / rooms / beds | `/hostels`, `/hostel-buildings`, `/hostel-rooms`, `/hostel-beds` (each with `<public_id>` detail) | Filter buildings by `?hostel_id=`, rooms by `?building_id=`, beds by `?room_id=`. A bed's `status` is read-only, changed only by allocating/vacating it. |
+| Hostel allocations | `/hostel-allocations`, `/hostel-allocations/<public_id>` (create + read-only), `.../vacate` | Filter list by `?student_id=` or `?bed_id=`. One active occupant per bed and one active allocation per student per academic year are both real partial-unique DB constraints (409 on a double-booking); reallocating a student is vacate-then-allocate. |
+| Hostel incidents | `/hostel-incidents`, `/hostel-incidents/<public_id>`, `.../resolve` | Filter list by `?hostel_id=` or `?status=`. |
 
 ## Local development (without Docker)
 
@@ -214,6 +229,15 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/finance/         #   FeeStructure/FeeItem, Discount/Scholarship, Invoice/InvoiceLine,
                         #   Payment, Refund (as reversal), Receipt (PDF via Celery),
                         #   LedgerEntry (double-entry, append-only via DB trigger)
+  apps/library/         #   LibraryBook/Copy/Member, LibraryLoan (one open loan per copy via
+                        #   partial-unique DB constraint), LibraryFine
+  apps/inventory/       #   InventoryItem, Supplier, PurchaseOrder, StockMovement
+                        #   (append-only via DB trigger, drives quantity_on_hand)
+  apps/transport/       #   Vehicle, TransportRoute/RouteStop, TransportAssignment
+                        #   (one active assignment per student/year via partial-unique constraint),
+                        #   VehicleMaintenance
+  apps/hostel/          #   Hostel/Building/Room/Bed, HostelAllocation (one active occupant per
+                        #   bed and per student/year via partial-unique constraints), HostelIncident
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -223,4 +247,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-See §18 of `ARCHITECTURE.md` for what comes after Milestone 8.
+See §18 of `ARCHITECTURE.md` for what comes after Milestone 9.
