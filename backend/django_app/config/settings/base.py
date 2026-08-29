@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     "apps.assignments",
     "apps.communication",
     "apps.documents",
+    "apps.dashboards",
+    "apps.reports",
     "apps.web",
 ]
 

@@ -6,13 +6,13 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 10 (assignments, communication, notifications, documents) complete.
-Milestone 9 (library, inventory, transport, hostel), Milestone 8 (fees, invoices, payments,
-receipts, finance reports), Milestone 7 (examinations, assessments, results, report cards),
-Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects, enrollment),
-Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses,
-academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1
-(repo skeleton, Docker, env config, health/readiness) complete.
+**Status:** Milestone 11 (dashboards, analytics, reports) complete. Milestone 10 (assignments,
+communication, notifications, documents), Milestone 9 (library, inventory, transport, hostel),
+Milestone 8 (fees, invoices, payments, receipts, finance reports), Milestone 7 (examinations,
+assessments, results, report cards), Milestone 6 (attendance, timetable), Milestone 5 (classes,
+sections, subjects, enrollment), Milestone 4 (students, parents/guardians, staff, teachers),
+Milestone 3 (schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
+multi-tenancy), and Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -69,7 +69,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-10)
+## Domain APIs (Milestones 3-11)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -139,6 +139,8 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Notification preferences | `/notification-preferences` (GET/PATCH, singular — no `<public_id>`) | Per-user channel toggles (email/SMS/push/in-app); get-or-creates on first access. |
 | Messages | `/messages`, `/messages/<public_id>/read` | Direct user-to-user messages; list is scoped to messages the requesting user sent or received. |
 | Documents | `/documents` (read-only), `/documents/upload` (multipart), `/documents/<public_id>`, `.../download` | Filter list by `?student_id=` or `?staff_id=`. Upload validates content-type + magic bytes + size limit (§14) and stores under a tenant-scoped key; owned by exactly one of a `Student` or `Staff` (DB check constraint). Download never returns a stored URL — a fresh short-lived presigned one is computed at request time, after the same auth + tenant-scoping check every other endpoint goes through. |
+| Dashboard | `/dashboard/summary` (read-only, singular) | No RBAC permission beyond being authenticated — always the requesting user's own role-appropriate view. Branches on the user's linked profile: a student sees attendance/upcoming-assignments/fees, a teacher their classes/pending grading/today's periods, a guardian a per-child breakdown, and anyone else an org-wide admin summary (totals, net receivables from the finance ledger, open hostel incidents, overdue library loans). |
+| Reports | `/reports`, `/reports/<public_id>` (create + read-only), `.../download` | Filter list by `?report_type=` or `?school_id=`. `report_type` (`student_list`/`attendance_summary`/`fee_collection`/`results_summary`) × `format` (`csv`/`xlsx`/`pdf`) generated async via Celery, reusing the same store-once-access-later storage + presigned-download shape as `apps.documents.Document`. `parameters` is a JSON bag of report-specific filters (e.g. `{"term_id": "..."}`). |
 
 ## Local development (without Docker)
 
@@ -252,6 +254,10 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
                         #   Notification, NotificationPreference, Message
   apps/documents/       #   Document (owned by exactly one of Student/Staff; upload validates
                         #   MIME + magic bytes + size, downloads via a fresh presigned URL)
+  apps/dashboards/      #   No models — a single role-aware summary endpoint (student/teacher/
+                        #   guardian/admin), aggregate queries only
+  apps/reports/         #   ReportRequest: async CSV/Excel/PDF exports (student list, attendance,
+                        #   fee collection, results) via Celery, same storage shape as documents
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -261,4 +267,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-See §18 of `ARCHITECTURE.md` for what comes after Milestone 10.
+See §18 of `ARCHITECTURE.md` for what comes after Milestone 11.
