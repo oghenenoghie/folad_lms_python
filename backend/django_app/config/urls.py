@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/v1/", include("apps.attendance.urls")),
     path("api/v1/", include("apps.timetable.urls")),
     path("api/v1/", include("apps.examinations.urls")),
+    path("api/v1/", include("apps.finance.urls")),
     # Server-rendered UI (UI_MIGRATION_PLAN.md) — session-authenticated,
     # entirely separate from the JWT-authenticated api/v1/ surface above.
     path("app/", include("apps.web.urls")),
