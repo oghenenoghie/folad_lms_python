@@ -55,6 +55,9 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.transport",
     "apps.hostel",
+    "apps.assignments",
+    "apps.communication",
+    "apps.documents",
     "apps.web",
 ]
 

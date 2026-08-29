@@ -512,4 +512,61 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Assignments",
+        "items": [
+            {
+                "title": "Assignments",
+                "icon": "assignment",
+                "link": reverse_lazy("admin:assignments_assignment_changelist"),
+                "permission": _view_perm("assignments", "assignment"),
+            },
+            {
+                "title": "Submissions",
+                "icon": "upload_file",
+                "link": reverse_lazy("admin:assignments_assignmentsubmission_changelist"),
+                "permission": _view_perm("assignments", "assignmentsubmission"),
+            },
+        ],
+    },
+    {
+        "title": "Communication",
+        "items": [
+            {
+                "title": "Announcements",
+                "icon": "campaign",
+                "link": reverse_lazy("admin:communication_announcement_changelist"),
+                "permission": _view_perm("communication", "announcement"),
+            },
+            {
+                "title": "Notifications",
+                "icon": "notifications",
+                "link": reverse_lazy("admin:communication_notification_changelist"),
+                "permission": _view_perm("communication", "notification"),
+            },
+            {
+                "title": "Notification preferences",
+                "icon": "tune",
+                "link": reverse_lazy("admin:communication_notificationpreference_changelist"),
+                "permission": _view_perm("communication", "notificationpreference"),
+            },
+            {
+                "title": "Messages",
+                "icon": "mail",
+                "link": reverse_lazy("admin:communication_message_changelist"),
+                "permission": _view_perm("communication", "message"),
+            },
+        ],
+    },
+    {
+        "title": "Documents",
+        "items": [
+            {
+                "title": "Documents",
+                "icon": "description",
+                "link": reverse_lazy("admin:documents_document_changelist"),
+                "permission": _view_perm("documents", "document"),
+            },
+        ],
+    },
 ]

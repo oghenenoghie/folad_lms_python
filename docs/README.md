@@ -6,12 +6,13 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 9 (library, inventory, transport, hostel) complete. Milestone 8 (fees,
-invoices, payments, receipts, finance reports), Milestone 7 (examinations, assessments, results,
-report cards), Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects,
-enrollment), Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools,
-campuses, academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and
-Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
+**Status:** Milestone 10 (assignments, communication, notifications, documents) complete.
+Milestone 9 (library, inventory, transport, hostel), Milestone 8 (fees, invoices, payments,
+receipts, finance reports), Milestone 7 (examinations, assessments, results, report cards),
+Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects, enrollment),
+Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses,
+academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1
+(repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -68,7 +69,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-9)
+## Domain APIs (Milestones 3-10)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -131,6 +132,13 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Hostels / buildings / rooms / beds | `/hostels`, `/hostel-buildings`, `/hostel-rooms`, `/hostel-beds` (each with `<public_id>` detail) | Filter buildings by `?hostel_id=`, rooms by `?building_id=`, beds by `?room_id=`. A bed's `status` is read-only, changed only by allocating/vacating it. |
 | Hostel allocations | `/hostel-allocations`, `/hostel-allocations/<public_id>` (create + read-only), `.../vacate` | Filter list by `?student_id=` or `?bed_id=`. One active occupant per bed and one active allocation per student per academic year are both real partial-unique DB constraints (409 on a double-booking); reallocating a student is vacate-then-allocate. |
 | Hostel incidents | `/hostel-incidents`, `/hostel-incidents/<public_id>`, `.../resolve` | Filter list by `?hostel_id=` or `?status=`. |
+| Assignments | `/assignments`, `/assignments/<public_id>` | Filter list by `?class_subject_id=` or `?term_id=`. |
+| Assignment submissions | `/assignment-submissions`, `/assignment-submissions/<public_id>` (create + read-only), `/assignment-submissions/upload` (multipart), `.../download`, `.../grade` | Filter list by `?assignment_id=` or `?student_id=`. A submission is text (plain create) or a file (the `/upload` multipart endpoint) — never both. One submission per student per assignment; `status` auto-derives to `late` if submitted past the due date. Grading is a dedicated transition, not a plain PATCH. |
+| Announcements | `/announcements`, `/announcements/<public_id>`, `.../publish` | Filter list by `?school_id=`. Publishing fans out a `Notification` to every user in the announcement's audience (students/staff/parents/all) — the notification center's concrete write path. |
+| Notifications | `/notifications` (read-only), `.../read`, `/notifications/mark-all-read` | Always scoped to the requesting user's own notifications — no RBAC permission needed, just `IsAuthenticated`. Filter by `?is_read=`. |
+| Notification preferences | `/notification-preferences` (GET/PATCH, singular — no `<public_id>`) | Per-user channel toggles (email/SMS/push/in-app); get-or-creates on first access. |
+| Messages | `/messages`, `/messages/<public_id>/read` | Direct user-to-user messages; list is scoped to messages the requesting user sent or received. |
+| Documents | `/documents` (read-only), `/documents/upload` (multipart), `/documents/<public_id>`, `.../download` | Filter list by `?student_id=` or `?staff_id=`. Upload validates content-type + magic bytes + size limit (§14) and stores under a tenant-scoped key; owned by exactly one of a `Student` or `Staff` (DB check constraint). Download never returns a stored URL — a fresh short-lived presigned one is computed at request time, after the same auth + tenant-scoping check every other endpoint goes through. |
 
 ## Local development (without Docker)
 
@@ -238,6 +246,12 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
                         #   VehicleMaintenance
   apps/hostel/          #   Hostel/Building/Room/Bed, HostelAllocation (one active occupant per
                         #   bed and per student/year via partial-unique constraints), HostelIncident
+  apps/assignments/     #   Assignment, AssignmentSubmission (text or file; own storage fields,
+                        #   deliberately not FK'd to apps.documents.Document)
+  apps/communication/   #   Announcement (publish -> fans out Notification to its audience),
+                        #   Notification, NotificationPreference, Message
+  apps/documents/       #   Document (owned by exactly one of Student/Staff; upload validates
+                        #   MIME + magic bytes + size, downloads via a fresh presigned URL)
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -247,4 +261,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-See §18 of `ARCHITECTURE.md` for what comes after Milestone 9.
+See §18 of `ARCHITECTURE.md` for what comes after Milestone 10.

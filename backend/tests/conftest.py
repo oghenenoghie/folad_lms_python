@@ -962,3 +962,125 @@ def hostel_allocation_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def assignment_factory(db):
+    from apps.assignments.models import Assignment
+    from apps.tenancy.context import activate_organization
+
+    def make(*, class_subject, term, title="Homework 1", due_date="2025-09-15", max_score="100.00", **extra):
+        activate_organization(class_subject.organization_id)
+        return Assignment.all_tenants.create(
+            organization=class_subject.organization,
+            class_subject=class_subject,
+            term=term,
+            title=title,
+            due_date=due_date,
+            max_score=max_score,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def assignment_submission_factory(db):
+    from django.utils import timezone
+
+    from apps.assignments.models import AssignmentSubmission
+    from apps.tenancy.context import activate_organization
+
+    def make(*, assignment, student, text_content="My answer", **extra):
+        activate_organization(assignment.organization_id)
+        extra.setdefault("submitted_at", timezone.now())
+        return AssignmentSubmission.all_tenants.create(
+            organization=assignment.organization,
+            assignment=assignment,
+            student=student,
+            text_content=text_content,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def announcement_factory(db):
+    from apps.communication.models import Announcement
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, title="Term begins", body="Welcome back!", **extra):
+        activate_organization(school.organization_id)
+        return Announcement.all_tenants.create(
+            organization=school.organization, school=school, title=title, body=body, **extra
+        )
+
+    return make
+
+
+@pytest.fixture
+def notification_factory(db):
+    from apps.communication.models import Notification
+    from apps.tenancy.context import activate_organization
+
+    def make(*, recipient, notification_type="system", title="Heads up", **extra):
+        activate_organization(recipient.organization_id)
+        return Notification.all_tenants.create(
+            organization=recipient.organization,
+            recipient=recipient,
+            notification_type=notification_type,
+            title=title,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def message_factory(db):
+    from apps.communication.models import Message
+    from apps.tenancy.context import activate_organization
+
+    def make(*, sender, recipient, subject="Hi", body="Hello there", **extra):
+        activate_organization(sender.organization_id)
+        return Message.all_tenants.create(
+            organization=sender.organization,
+            sender=sender,
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def document_factory(db):
+    from apps.documents.models import Document
+    from apps.tenancy.context import activate_organization
+
+    def make(
+        *, school, student=None, staff=None, document_type="id_card", title="ID Card",
+        storage_key="documents/test/key.pdf", file_name="id.pdf", content_type="application/pdf",
+        size_bytes=1024, **extra,
+    ):
+        activate_organization(school.organization_id)
+        owner_type = "student" if student else "staff"
+        return Document.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            owner_type=owner_type,
+            student=student,
+            staff=staff,
+            document_type=document_type,
+            title=title,
+            storage_key=storage_key,
+            file_name=file_name,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            **extra,
+        )
+
+    return make
