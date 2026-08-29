@@ -530,3 +530,166 @@ def report_card_factory(db):
         )
 
     return make
+
+
+@pytest.fixture
+def fee_structure_factory(db):
+    from apps.finance.models import FeeStructure
+    from apps.tenancy.context import activate_organization
+
+    def make(*, term, name="Term Fees", **extra):
+        activate_organization(term.organization_id)
+        return FeeStructure.all_tenants.create(
+            organization=term.organization,
+            school=term.academic_year.school,
+            academic_year=term.academic_year,
+            term=term,
+            name=name,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def fee_item_factory(db):
+    from apps.finance.models import FeeItem
+    from apps.tenancy.context import activate_organization
+
+    def make(*, fee_structure, name="Tuition", amount_minor=500_000, **extra):
+        activate_organization(fee_structure.organization_id)
+        return FeeItem.all_tenants.create(
+            organization=fee_structure.organization,
+            fee_structure=fee_structure,
+            name=name,
+            amount_minor=amount_minor,
+            currency_code=fee_structure.organization.currency_code,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def discount_factory(db):
+    from apps.finance.models import Discount
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, name="Sibling Discount", discount_type="percentage", **extra):
+        activate_organization(school.organization_id)
+        if discount_type == "percentage":
+            extra.setdefault("percentage", "10.00")
+        else:
+            extra.setdefault("fixed_amount_minor", 10_000)
+        return Discount.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            name=name,
+            discount_type=discount_type,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def scholarship_factory(db):
+    from apps.finance.models import Scholarship
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, discount, academic_year, **extra):
+        activate_organization(student.organization_id)
+        return Scholarship.all_tenants.create(
+            organization=student.organization,
+            school=student.school,
+            student=student,
+            discount=discount,
+            academic_year=academic_year,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def invoice_factory(db):
+    from apps.finance.models import Invoice
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, term, invoice_number="INV-0001", **extra):
+        activate_organization(student.organization_id)
+        return Invoice.all_tenants.create(
+            organization=student.organization,
+            school=term.academic_year.school,
+            student=student,
+            academic_year=term.academic_year,
+            term=term,
+            invoice_number=invoice_number,
+            currency_code=student.organization.currency_code,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def invoice_line_factory(db):
+    from apps.finance.models import InvoiceLine
+    from apps.tenancy.context import activate_organization
+
+    def make(*, invoice, description="Tuition", quantity=1, unit_amount_minor=500_000, **extra):
+        activate_organization(invoice.organization_id)
+        amount_minor = extra.pop("amount_minor", quantity * unit_amount_minor)
+        return InvoiceLine.all_tenants.create(
+            organization=invoice.organization,
+            invoice=invoice,
+            description=description,
+            quantity=quantity,
+            unit_amount_minor=unit_amount_minor,
+            amount_minor=amount_minor,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def payment_factory(db):
+    from django.utils import timezone
+
+    from apps.finance.models import Payment
+    from apps.tenancy.context import activate_organization
+
+    def make(*, invoice, reference="PAY-0001", amount_minor=500_000, method="cash", **extra):
+        activate_organization(invoice.organization_id)
+        extra.setdefault("paid_at", timezone.now())
+        return Payment.all_tenants.create(
+            organization=invoice.organization,
+            school=invoice.school,
+            invoice=invoice,
+            reference=reference,
+            amount_minor=amount_minor,
+            currency_code=invoice.currency_code,
+            method=method,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def receipt_factory(db):
+    from apps.finance.models import Receipt
+    from apps.tenancy.context import activate_organization
+
+    def make(*, payment, receipt_number=None, **extra):
+        activate_organization(payment.organization_id)
+        return Receipt.all_tenants.create(
+            organization=payment.organization,
+            school=payment.school,
+            payment=payment,
+            receipt_number=receipt_number or f"RCPT-{payment.reference}",
+            **extra,
+        )
+
+    return make

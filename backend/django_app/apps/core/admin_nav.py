@@ -307,4 +307,69 @@ NAVIGATION = [
             },
         ],
     },
+    {
+        "title": "Finance",
+        "items": [
+            {
+                "title": "Fee structures",
+                "icon": "receipt_long",
+                "link": reverse_lazy("admin:finance_feestructure_changelist"),
+                "permission": _view_perm("finance", "feestructure"),
+            },
+            {
+                "title": "Fee items",
+                "icon": "sell",
+                "link": reverse_lazy("admin:finance_feeitem_changelist"),
+                "permission": _view_perm("finance", "feeitem"),
+            },
+            {
+                "title": "Discounts",
+                "icon": "percent",
+                "link": reverse_lazy("admin:finance_discount_changelist"),
+                "permission": _view_perm("finance", "discount"),
+            },
+            {
+                "title": "Scholarships",
+                "icon": "school",
+                "link": reverse_lazy("admin:finance_scholarship_changelist"),
+                "permission": _view_perm("finance", "scholarship"),
+            },
+            {
+                "title": "Invoices",
+                "icon": "request_quote",
+                "link": reverse_lazy("admin:finance_invoice_changelist"),
+                "permission": _view_perm("finance", "invoice"),
+            },
+            {
+                "title": "Invoice lines",
+                "icon": "list_alt",
+                "link": reverse_lazy("admin:finance_invoiceline_changelist"),
+                "permission": _view_perm("finance", "invoiceline"),
+            },
+            {
+                "title": "Payments",
+                "icon": "payments",
+                "link": reverse_lazy("admin:finance_payment_changelist"),
+                "permission": _view_perm("finance", "payment"),
+            },
+            {
+                "title": "Refunds",
+                "icon": "currency_exchange",
+                "link": reverse_lazy("admin:finance_refund_changelist"),
+                "permission": _view_perm("finance", "refund"),
+            },
+            {
+                "title": "Receipts",
+                "icon": "receipt",
+                "link": reverse_lazy("admin:finance_receipt_changelist"),
+                "permission": _view_perm("finance", "receipt"),
+            },
+            {
+                "title": "Ledger entries",
+                "icon": "account_balance",
+                "link": reverse_lazy("admin:finance_ledgerentry_changelist"),
+                "permission": _view_perm("finance", "ledgerentry"),
+            },
+        ],
+    },
 ]

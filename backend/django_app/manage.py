@@ -2,6 +2,13 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+
+# backend/ (this file's grandparent) so `import shared` (backend/shared/,
+# the Money value object) resolves the same way it does in Docker, where
+# the image's PYTHONPATH includes /app (== backend/) explicitly. Without
+# this, any local (non-Docker) `manage.py` invocation can't import shared.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> None:

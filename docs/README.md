@@ -6,11 +6,12 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 7 (examinations, assessments, results, report cards) complete.
-Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects, enrollment),
-Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses,
-academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1
-(repo skeleton, Docker, env config, health/readiness) complete.
+**Status:** Milestone 8 (fees, invoices, payments, receipts, finance reports) complete.
+Milestone 7 (examinations, assessments, results, report cards), Milestone 6 (attendance,
+timetable), Milestone 5 (classes, sections, subjects, enrollment), Milestone 4 (students,
+parents/guardians, staff, teachers), Milestone 3 (schools, campuses, academic years, terms,
+departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1 (repo skeleton, Docker,
+env config, health/readiness) complete.
 
 ## Stack
 
@@ -67,7 +68,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-7)
+## Domain APIs (Milestones 3-8)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -105,6 +106,16 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Results | `/results`, `/results/<public_id>`, `.../submit`, `.../review`, `.../verify`, `.../publish` | Filter list by `?assessment_id=` or `?student_id=`. `score`/`grade`/`remark` are only editable while `status="entered"`; `grade`/`remark` auto-resolve from the school's default grading scheme. The four transition endpoints enforce strict sequential ordering (409 on a skip or out-of-order call) and each has its own permission code so duties can be separated across roles. |
 | Result workflow states | `/result-workflow-states` (read-only) | Filter by `?result_id=`; append-only at the DB level, same as attendance audit — every transition writes an immutable row here. |
 | Report cards | `/report-cards`, `/report-cards/<public_id>` (create + read-only) | Filter list by `?student_id=` or `?term_id=`; POST enqueues async PDF generation via Celery (`apps.examinations.tasks.reports.generate_report_card_pdf`) covering the student's published results for the term, storing the file through the provider-agnostic `apps.core.storage` abstraction (S3 in production, local filesystem in dev/CI). `status` moves `pending` -> `generating` -> `ready`/`failed`; no client-facing update — only the task writes `status`/`file_url`/`generated_at`/`error_message`. |
+| Fee structures | `/fee-structures`, `/fee-structures/<public_id>` | Filter list by `?term_id=`; `school`/`academic_year` are read-only, derived server-side from `term`. |
+| Fee items | `/fee-items`, `/fee-items/<public_id>` | Filter list by `?fee_structure_id=`; `currency_code` is read-only, derived from the organization. |
+| Discounts | `/discounts`, `/discounts/<public_id>` | Filter list by `?school_id=`; `discount_type` is `percentage` (with `percentage`) or `fixed_amount` (with `fixed_amount_minor`) — a DB check constraint enforces exactly one is set. |
+| Scholarships | `/scholarships`, `/scholarships/<public_id>` | Filter list by `?student_id=` or `?academic_year_id=`; awards an existing `Discount` to a specific student for an academic year. |
+| Invoices | `/invoices`, `/invoices/<public_id>`, `.../issue`, `.../cancel` | Filter list by `?student_id=`, `?term_id=`, or `?status=`. `total_minor`/`currency_code`/`status`/`issued_at` are read-only — only editable while `status="draft"`. `issue` posts a balanced accounts_receivable/revenue ledger pair and requires at least one line; `cancel` is only allowed before any payment exists (reverses the same ledger pair if the invoice was issued). |
+| Invoice lines | `/invoice-lines`, `/invoice-lines/<public_id>` | Filter list by `?invoice_id=`; mutable only while the parent invoice is `"draft"` (409 otherwise). Each add/edit recomputes `amount_minor` (quantity × unit price − discount) and the parent invoice's `total_minor` together, so the two can never drift. |
+| Payments | `/payments`, `/payments/<public_id>` (create + read-only) | Filter list by `?invoice_id=`. `reference` is an idempotency key (unique per organization — a retried post is a clean 409, not a double-post); posting is wrapped in `select_for_update()` on the invoice so concurrent payments can't together overpay it (409 past the outstanding balance). Posts a cash/accounts_receivable ledger pair, moves the invoice to `partially_paid`/`paid`, and enqueues a receipt PDF via Celery after the transaction commits. No client-facing update or delete — a correction is a `Refund`. |
+| Refunds | `/refunds`, `/refunds/<public_id>` (create + read-only) | Filter list by `?payment_id=`. Never edits the original `Payment` — posts the exact mirror of its ledger pair (debit/credit swapped) and recomputes the parent invoice's status from the net (paid − refunded) balance; rejects (409) a refund exceeding what's left refundable on the payment. |
+| Receipts | `/receipts`, `/receipts/<public_id>` (read-only) | Filter list by `?payment_id=`; one per payment, generated automatically by `payment_service.record_payment` — same async-PDF-via-Celery shape as report cards. |
+| Ledger entries | `/ledger-entries` (read-only) | Filter by `?school_id=`, `?ref_type=`, or `?ref_id=`; append-only double-entry trail — every `Invoice`/`Payment`/`Refund` posting writes exactly two balanced rows here, and a Postgres trigger rejects UPDATE/DELETE on this table entirely, same as attendance/result-workflow audit trails. |
 
 ## Local development (without Docker)
 
@@ -200,6 +211,9 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/timetable/       #   Room, Period, TimetableSlot (conflict detection via DB constraints)
   apps/examinations/    #   GradingScheme/GradeBand, Exam/ExamSchedule/Invigilator, Assessment,
                         #   Result (enter->submit->review->verify->publish), ReportCard (PDF via Celery)
+  apps/finance/         #   FeeStructure/FeeItem, Discount/Scholarship, Invoice/InvoiceLine,
+                        #   Payment, Refund (as reversal), Receipt (PDF via Celery),
+                        #   LedgerEntry (double-entry, append-only via DB trigger)
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -209,4 +223,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-See §18 of `ARCHITECTURE.md` for what comes after Milestone 7.
+See §18 of `ARCHITECTURE.md` for what comes after Milestone 8.
