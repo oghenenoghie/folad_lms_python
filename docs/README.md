@@ -6,10 +6,11 @@ under `/app/` (`backend/django_app/apps/web`, see `UI_MIGRATION_PLAN.md`) and a 
 app (`frontend/`, see `frontend/README.md`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
 full system design, module breakdown, database catalogue, and milestone roadmap.
 
-**Status:** Milestone 6 (attendance, timetable) complete. Milestone 5 (classes, sections,
-subjects, enrollment), Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3
-(schools, campuses, academic years, terms, departments), Milestone 2 (auth, RBAC,
-multi-tenancy), and Milestone 1 (repo skeleton, Docker, env config, health/readiness) complete.
+**Status:** Milestone 7 (examinations, assessments, results, report cards) complete.
+Milestone 6 (attendance, timetable), Milestone 5 (classes, sections, subjects, enrollment),
+Milestone 4 (students, parents/guardians, staff, teachers), Milestone 3 (schools, campuses,
+academic years, terms, departments), Milestone 2 (auth, RBAC, multi-tenancy), and Milestone 1
+(repo skeleton, Docker, env config, health/readiness) complete.
 
 ## Stack
 
@@ -66,7 +67,7 @@ works on any DB) plus, on Postgres only, a Row-Level Security policy keyed on th
 are exercised in `backend/tests/api/test_tenancy.py`; the RLS-specific tests skip automatically
 on SQLite.
 
-## Domain APIs (Milestones 3-6)
+## Domain APIs (Milestones 3-7)
 
 All under `/api/v1/`, all authenticated, all gated by `module.action` RBAC permissions and
 tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
@@ -95,6 +96,15 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 | Rooms | `/rooms`, `/rooms/<public_id>` | Filter list by `?campus_id=`. |
 | Periods | `/periods`, `/periods/<public_id>` | Filter list by `?school_id=`; unique `sequence` and `name` per school. |
 | Timetable slots | `/timetable-slots`, `/timetable-slots/<public_id>` | Filter list by `?class_arm_id=`, `?teacher_id=`, or `?room_id=`. `class_arm`/`teacher` are read-only, derived server-side from `class_subject`. Teacher/class-arm/room double-booking on the same day+period are real database constraints (409, not a soft check). |
+| Grading schemes | `/grading-schemes`, `/grading-schemes/<public_id>` | Filter list by `?school_id=`; one scheme per school flagged `is_default`. |
+| Grade bands | `/grade-bands`, `/grade-bands/<public_id>` | Filter list by `?grading_scheme_id=`; score range that maps to a letter grade + remark. |
+| Exams | `/exams`, `/exams/<public_id>` | Filter list by `?term_id=`; `school`/`academic_year` are read-only, derived server-side from `term`. |
+| Exam schedules | `/exam-schedules`, `/exam-schedules/<public_id>` | Filter list by `?exam_id=`; one schedule per exam per class subject. |
+| Invigilators | `/invigilators`, `/invigilators/<public_id>` (create/delete only) | Filter list by `?exam_schedule_id=`; reassigning is unassign-then-assign, not an in-place edit. |
+| Assessments | `/assessments`, `/assessments/<public_id>` | Filter list by `?class_subject_id=` or `?term_id=`; a gradable item (test/quiz/assignment/project/practical/exam) on a class subject, optionally tied to an `Exam` header. |
+| Results | `/results`, `/results/<public_id>`, `.../submit`, `.../review`, `.../verify`, `.../publish` | Filter list by `?assessment_id=` or `?student_id=`. `score`/`grade`/`remark` are only editable while `status="entered"`; `grade`/`remark` auto-resolve from the school's default grading scheme. The four transition endpoints enforce strict sequential ordering (409 on a skip or out-of-order call) and each has its own permission code so duties can be separated across roles. |
+| Result workflow states | `/result-workflow-states` (read-only) | Filter by `?result_id=`; append-only at the DB level, same as attendance audit — every transition writes an immutable row here. |
+| Report cards | `/report-cards`, `/report-cards/<public_id>` (create + read-only) | Filter list by `?student_id=` or `?term_id=`; POST enqueues async PDF generation via Celery (`apps.examinations.tasks.reports.generate_report_card_pdf`) covering the student's published results for the term, storing the file through the provider-agnostic `apps.core.storage` abstraction (S3 in production, local filesystem in dev/CI). `status` moves `pending` -> `generating` -> `ready`/`failed`; no client-facing update — only the task writes `status`/`file_url`/`generated_at`/`error_message`. |
 
 ## Local development (without Docker)
 
@@ -188,6 +198,8 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
   apps/academics/       #   ClassLevel, ClassArm, Subject, ClassSubject, Enrollment
   apps/attendance/      #   Attendance, AttendanceAudit (append-only via DB trigger)
   apps/timetable/       #   Room, Period, TimetableSlot (conflict detection via DB constraints)
+  apps/examinations/    #   GradingScheme/GradeBand, Exam/ExamSchedule/Invigilator, Assessment,
+                        #   Result (enter->submit->review->verify->publish), ReportCard (PDF via Celery)
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
@@ -197,5 +209,4 @@ docs/                  # This file, ARCHITECTURE.md, and future module docs
 
 ## Next milestone
 
-M7 — examinations, assessments, results, report cards (enter→submit→review→verify→publish
-workflow, PDF via Celery).
+See §18 of `ARCHITECTURE.md` for what comes after Milestone 7.
