@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from unfold.admin import ModelAdmin
 from unfold.forms import AdminPasswordChangeForm
 
-from apps.core.admin import TenantAdminMixin
+from apps.core.admin import TenantAdminMixin, TenantFKAdminMixin
 
 from .forms import RoleAdminForm, UserChangeForm, UserCreationForm
 from .models import FailedLoginAttempt, LoginHistory, Permission, Role, RolePermission, User, UserRole
@@ -58,7 +58,7 @@ class RolePermissionAdmin(ModelAdmin):
 
 
 @admin.register(UserRole)
-class UserRoleAdmin(ModelAdmin):
+class UserRoleAdmin(TenantFKAdminMixin, ModelAdmin):
     list_display = ["user", "role", "granted_by", "granted_at"]
     autocomplete_fields = ["user", "role", "granted_by"]
 
