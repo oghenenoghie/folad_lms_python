@@ -5,7 +5,7 @@ from unfold.forms import AdminPasswordChangeForm
 
 from apps.core.admin import TenantAdminMixin
 
-from .forms import UserChangeForm, UserCreationForm
+from .forms import RoleAdminForm, UserChangeForm, UserCreationForm
 from .models import FailedLoginAttempt, LoginHistory, Permission, Role, RolePermission, User, UserRole
 
 
@@ -40,10 +40,15 @@ class PermissionAdmin(ModelAdmin):
 
 @admin.register(Role)
 class RoleAdmin(ModelAdmin):
+    form = RoleAdminForm
     list_display = ["name", "label", "is_system", "organization"]
     search_fields = ["name", "label"]
     list_filter = ["is_system", "organization"]
     autocomplete_fields = ["organization"]
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        obj.permissions.set(form.cleaned_data["permissions"])
 
 
 @admin.register(RolePermission)
