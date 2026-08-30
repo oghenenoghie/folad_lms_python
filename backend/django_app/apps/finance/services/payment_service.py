@@ -66,5 +66,5 @@ def record_payment(
         invoice.save(update_fields=["status", "updated_by", "updated_at"])
 
         receipt = receipt_service.create_receipt(payment=payment, actor=actor)
-        transaction.on_commit(lambda: generate_receipt_pdf.delay(receipt.id))
+        transaction.on_commit(lambda: generate_receipt_pdf.delay(receipt.id, receipt.organization_id))
     return payment

@@ -238,6 +238,32 @@ def test_examinations_app_layer_tenant_isolation(
     assert visible.first().organization_id == organization.id
 
 
+@pytest.mark.django_db
+def test_generate_report_card_pdf_visible_with_no_ambient_org_context(
+    organization, exam_fixture_set, academic_year_factory, term_factory,
+):
+    """A real Celery worker gets a fresh DB connection with no app.current_org
+    GUC set (unlike CELERY_TASK_ALWAYS_EAGER, which reuses the calling
+    request's connection). Simulate that by clearing the org context before
+    invoking the task, the way a genuine worker process would receive it."""
+    from apps.examinations.models import ReportCard
+    from apps.examinations.tasks.reports import generate_report_card_pdf
+
+    term = exam_fixture_set["term"]
+    student = exam_fixture_set["student"]
+    report_card = ReportCard.objects.create(
+        organization=organization, student=student, academic_year=term.academic_year, term=term,
+    )
+
+    activate_organization(None)
+    generate_report_card_pdf(report_card.id, organization.id)
+
+    activate_organization(organization.id)
+    report_card.refresh_from_db()
+    assert report_card.status == "ready"
+    assert report_card.file_url
+
+
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="append-only trigger is Postgres-only")
 @pytest.mark.django_db
 def test_result_workflow_state_is_append_only_at_db_level(
