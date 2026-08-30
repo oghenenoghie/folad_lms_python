@@ -19,7 +19,30 @@ def environment_title_prefix(request):
     return "[DEV] " if settings.DEBUG else ""
 
 
-class TenantAdminMixin:
+class TenantFKAdminMixin:
+    """Any FK field pointing at a tenant-scoped (RLS) model — regardless of
+    whether *this* ModelAdmin's own model is itself tenant-scoped — needs
+    this. Left unset, a FK field's *validation* queryset defaults to the
+    related model's default manager (`objects`, a TenantManager), which
+    returns empty with no organization context active — and Django Admin's
+    session-based auth never activates one (see TenantAdminMixin below).
+    A search/autocomplete widget can still list choices fine (it may be
+    backed by a different, already-unscoped queryset), so the field looks
+    selectable right up until save, which fails with "that choice is not
+    one of the available choices". Mix this in on ANY ModelAdmin — not
+    just ones for tenant-scoped models — that has such a field (e.g.
+    UserRoleAdmin.user, which points at the tenant-scoped User model even
+    though UserRole itself carries no organization column).
+    """
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        related_model = db_field.remote_field.model
+        if "queryset" not in kwargs and hasattr(related_model, "all_tenants"):
+            kwargs["queryset"] = related_model.all_tenants.all()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+class TenantAdminMixin(TenantFKAdminMixin):
     """Django Admin is a platform-level ops console (§11 ARCHITECTURE.md),
     not a tenant-scoped surface — staff need to see records across every
     organization, not just whichever one happens to be in the app-layer
