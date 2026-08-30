@@ -12,6 +12,7 @@ from reportlab.pdfgen import canvas
 
 from apps.core.storage import save_file
 from apps.finance.models import Receipt
+from apps.tenancy.context import activate_organization
 from shared.money import Money
 
 
@@ -40,7 +41,11 @@ def _render_pdf(receipt: Receipt) -> bytes:
 
 
 @shared_task
-def generate_receipt_pdf(receipt_id: int) -> None:
+def generate_receipt_pdf(receipt_id: int, organization_id: int) -> None:
+    # A real (non-eager) worker gets a fresh DB connection with no
+    # app.current_org GUC set, so without this the RLS-scoped
+    # Receipt.objects lookup below always misses.
+    activate_organization(organization_id)
     try:
         receipt = Receipt.objects.get(id=receipt_id)
     except Receipt.DoesNotExist:

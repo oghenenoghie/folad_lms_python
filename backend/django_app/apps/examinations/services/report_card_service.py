@@ -25,5 +25,5 @@ def request_report_card(
     report_card.error_message = ""
     report_card.updated_by = actor
     report_card.save(update_fields=["status", "error_message", "updated_by", "updated_at"])
-    generate_report_card_pdf.delay(report_card.id)
+    generate_report_card_pdf.delay(report_card.id, report_card.organization_id)
     return report_card

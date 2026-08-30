@@ -13,6 +13,7 @@ from reportlab.pdfgen import canvas
 
 from apps.core.storage import save_file
 from apps.examinations.models import ReportCard, Result
+from apps.tenancy.context import activate_organization
 
 
 def _render_pdf(report_card: ReportCard) -> bytes:
@@ -64,7 +65,11 @@ def _render_pdf(report_card: ReportCard) -> bytes:
 
 
 @shared_task
-def generate_report_card_pdf(report_card_id: int) -> None:
+def generate_report_card_pdf(report_card_id: int, organization_id: int) -> None:
+    # A real (non-eager) worker gets a fresh DB connection with no
+    # app.current_org GUC set, so without this the RLS-scoped
+    # ReportCard.objects lookup below always misses.
+    activate_organization(organization_id)
     try:
         report_card = ReportCard.objects.get(id=report_card_id)
     except ReportCard.DoesNotExist:

@@ -148,6 +148,45 @@ def test_record_payment_partial_then_full_updates_invoice_status(
 
 
 @pytest.mark.django_db
+def test_generate_receipt_pdf_visible_with_no_ambient_org_context(
+    api_client, organization, user_factory, finance_fixture_set, fee_structure_factory, fee_item_factory,
+):
+    """A real Celery worker gets a fresh DB connection with no app.current_org
+    GUC set (unlike CELERY_TASK_ALWAYS_EAGER, which reuses the calling
+    request's connection). Simulate that by clearing the org context and
+    re-running the task the way a genuine worker process would receive it."""
+    from apps.finance.models import Receipt
+    from apps.finance.tasks.reports import generate_receipt_pdf
+
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(
+        user, "invoices.view", "invoices.create", "invoices.issue",
+        "invoice_lines.view", "invoice_lines.create", "payments.view", "payments.create", "receipts.view",
+    )
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    invoice_public_id = _issued_invoice(api_client, finance_fixture_set, fee_structure_factory, fee_item_factory)
+    payment = api_client.post(
+        "/api/v1/payments",
+        {"invoice": invoice_public_id, "reference": "PAY-1", "amount_minor": 200_000, "method": "cash"},
+        format="json",
+    )
+    assert payment.status_code == 201
+    receipt = Receipt.objects.get(payment__reference="PAY-1")
+    receipt.status = "pending"
+    receipt.file_url = ""
+    receipt.save(update_fields=["status", "file_url"])
+
+    activate_organization(None)
+    generate_receipt_pdf(receipt.id, organization.id)
+
+    activate_organization(organization.id)
+    receipt.refresh_from_db()
+    assert receipt.status == "ready"
+    assert receipt.file_url
+
+
+@pytest.mark.django_db
 def test_payment_rejects_duplicate_reference_and_overpayment(
     api_client, organization, user_factory, finance_fixture_set, fee_structure_factory, fee_item_factory,
 ):
