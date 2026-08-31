@@ -79,7 +79,9 @@ class PurchaseOrder(BaseModel):
     school = models.ForeignKey("schools.School", on_delete=models.PROTECT, related_name="purchase_orders")
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="purchase_orders")
     item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT, related_name="purchase_orders")
-    order_number = models.CharField(max_length=40)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this school (e.g. "PO-0001") — see apps.core.codegen.
+    order_number = models.CharField(max_length=40, blank=True)
     quantity_ordered = models.PositiveIntegerField()
     unit_cost_minor = models.BigIntegerField()
     currency_code = models.CharField(max_length=3)
@@ -101,6 +103,17 @@ class PurchaseOrder(BaseModel):
 
     def __str__(self) -> str:
         return self.order_number
+
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.order_number = next_sequence_code(
+                queryset=PurchaseOrder.all_tenants.filter(school_id=self.school_id),
+                field_name="order_number",
+                prefix="PO-",
+            )
+        super().save(*args, **kwargs)
 
 
 class StockMovement(BaseModel):

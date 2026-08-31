@@ -57,10 +57,14 @@ class TenantAdminMixin(TenantFKAdminMixin):
     and apps/accounts/authentication.py already use for the same reason.
     """
 
-    # created_by/updated_by (TimestampedModel) are set programmatically by
-    # the services layer, never by hand in the admin — read-only here so
-    # they render as plain text instead of an editable FK widget.
-    readonly_fields = ["created_by", "updated_by"]
+    # created_by/updated_by/deleted_at (TimestampedModel) are set
+    # programmatically by the services layer, never by hand in the admin —
+    # read-only here so they render as plain text instead of an editable
+    # widget. Left off this list, deleted_at in particular is a fully
+    # editable DateTimeField on every add/change form: an admin operator
+    # can accidentally soft-delete a brand-new record on creation, or hit
+    # a spurious "enter a valid date" error from a stray value in it.
+    readonly_fields = ["created_by", "updated_by", "deleted_at"]
 
     def get_queryset(self, request):
         qs = self.model.all_tenants.all()

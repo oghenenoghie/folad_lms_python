@@ -78,7 +78,10 @@ class HostelBuilding(BaseModel):
 class HostelRoom(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     building = models.ForeignKey(HostelBuilding, on_delete=models.PROTECT, related_name="rooms")
-    room_number = models.CharField(max_length=30)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this building (e.g. "1", "2") — see apps.core.codegen. Type the real
+    # room number instead when it needs to match the building's own signage.
+    room_number = models.CharField(max_length=30, blank=True)
     capacity = models.PositiveIntegerField()
 
     objects = TenantManager()
@@ -94,11 +97,25 @@ class HostelRoom(BaseModel):
     def __str__(self) -> str:
         return f"{self.building}: {self.room_number}"
 
+    def save(self, *args, **kwargs):
+        if not self.room_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.room_number = next_sequence_code(
+                queryset=HostelRoom.all_tenants.filter(building_id=self.building_id),
+                field_name="room_number",
+                width=1,
+            )
+        super().save(*args, **kwargs)
+
 
 class HostelBed(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     room = models.ForeignKey(HostelRoom, on_delete=models.PROTECT, related_name="beds")
-    bed_number = models.CharField(max_length=10)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this room (e.g. "1", "2") — see apps.core.codegen. Type the real bed
+    # number instead when it needs to match the room's own labeling.
+    bed_number = models.CharField(max_length=10, blank=True)
     status = models.CharField(max_length=20, choices=BED_STATUS_CHOICES, default="available")
 
     objects = TenantManager()
@@ -113,6 +130,17 @@ class HostelBed(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.room}: {self.bed_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.bed_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.bed_number = next_sequence_code(
+                queryset=HostelBed.all_tenants.filter(room_id=self.room_id),
+                field_name="bed_number",
+                width=1,
+            )
+        super().save(*args, **kwargs)
 
 
 class HostelAllocation(BaseModel):

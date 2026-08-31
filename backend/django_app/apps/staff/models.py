@@ -38,7 +38,9 @@ class Staff(BaseModel):
         on_delete=models.PROTECT,
         related_name="staff_profile",
     )
-    employee_number = models.CharField(max_length=30)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this school (e.g. "EMP-0001") — see apps.core.codegen.
+    employee_number = models.CharField(max_length=30, blank=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     position = models.CharField(max_length=100)
@@ -63,6 +65,17 @@ class Staff(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name} ({self.employee_number})"
+
+    def save(self, *args, **kwargs):
+        if not self.employee_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.employee_number = next_sequence_code(
+                queryset=Staff.all_tenants.filter(school_id=self.school_id),
+                field_name="employee_number",
+                prefix="EMP-",
+            )
+        super().save(*args, **kwargs)
 
 
 class Teacher(BaseModel):
