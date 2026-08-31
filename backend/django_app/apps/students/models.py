@@ -57,6 +57,11 @@ class Student(BaseModel):
     enrollment_status = models.CharField(
         max_length=20, choices=ENROLLMENT_STATUS_CHOICES, default="active"
     )
+    # A storage key (apps.core.storage), not a Django FileField — the
+    # default file storage is local-filesystem-only outside S3
+    # (STORAGE_BACKEND), which would silently lose the photo on every
+    # production redeploy. Same pattern as apps.documents/apps.assignments.
+    photo_storage_key = models.CharField(max_length=500, blank=True, default="")
 
     objects = TenantManager()
     all_tenants = models.Manager()
