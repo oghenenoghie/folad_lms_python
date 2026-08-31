@@ -152,6 +152,7 @@ def _admin_summary(organization) -> dict:
         "revenue_series": metrics.revenue_series(Payment.objects),
         "attendance_heatmap": metrics.attendance_heatmap(Attendance.objects),
         "top_defaulters": metrics.top_defaulters(Invoice.objects),
+        "weekly_attendance": metrics.weekly_attendance_series(Attendance.objects),
         "gender_breakdown": metrics.gender_breakdown(Student.objects),
         "enrollment_series_monthly": metrics.enrollment_monthly_series(Student.objects),
         "enrollment_series_weekly": metrics.enrollment_weekly_series(Student.objects),

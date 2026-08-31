@@ -18,9 +18,7 @@ data exists anywhere in this schema, and inventing plausible-looking
 numbers for them would be worse than not showing them.
 """
 import json
-from datetime import timedelta
 
-from django.db.models import Count, Q
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -106,6 +104,7 @@ def _gender_donut_json(breakdown: dict[str, int]) -> str:
 
 
 def dashboard_callback(request: HttpRequest, context: dict) -> dict:
+    today = timezone.localdate()
     attendance_pct = metrics.attendance_today_pct(Attendance.all_tenants)
     gender_breakdown = metrics.gender_breakdown(Student.all_tenants)
 
@@ -125,46 +124,28 @@ def dashboard_callback(request: HttpRequest, context: dict) -> dict:
     context["enrollment_chart_json_monthly"] = _monthly_enrollment_chart_json()
     context["enrollment_chart_json_weekly"] = _weekly_enrollment_chart_json()
 
-    today = timezone.localdate()
-    week_start = today - timedelta(days=today.weekday())
-    week_attendance = (
-        Attendance.all_tenants.filter(date__gte=week_start, date__lte=today)
-        .values("date")
-        .annotate(total=Count("id"), present=Count("id", filter=Q(status="present")))
-    )
-    by_date = {row["date"]: row for row in week_attendance}
-    weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri"]
-    present_pcts, absent_pcts = [], []
-    total_present = total_marked = 0
-    for offset in range(5):
-        day = week_start + timedelta(days=offset)
-        row = by_date.get(day)
-        if row and row["total"]:
-            pct = round(row["present"] * 100 / row["total"])
-            present_pcts.append(pct)
-            absent_pcts.append(100 - pct)
-            total_present += row["present"]
-            total_marked += row["total"]
-        else:
-            present_pcts.append(0)
-            absent_pcts.append(0)
+    weekly_attendance = metrics.weekly_attendance_series(Attendance.all_tenants)
     context["weekly_attendance_chart_json"] = json.dumps(
         {
-            "labels": weekday_labels,
+            "labels": [d["label"] for d in weekly_attendance["days"]],
             "datasets": [
-                {"label": "Present %", "data": present_pcts, "backgroundColor": "#3b82f6", "borderRadius": 4},
-                {"label": "Absent %", "data": absent_pcts, "backgroundColor": "#f59e0b", "borderRadius": 4},
+                {
+                    "label": "Present %",
+                    "data": [d["present_pct"] for d in weekly_attendance["days"]],
+                    "backgroundColor": "#3b82f6",
+                    "borderRadius": 4,
+                },
+                {
+                    "label": "Absent %",
+                    "data": [d["absent_pct"] for d in weekly_attendance["days"]],
+                    "backgroundColor": "#f59e0b",
+                    "borderRadius": 4,
+                },
             ],
         }
     )
-    context["weekly_attendance_present_pct"] = (
-        round(total_present * 100 / total_marked) if total_marked else None
-    )
-    context["weekly_attendance_absent_pct"] = (
-        100 - context["weekly_attendance_present_pct"]
-        if context["weekly_attendance_present_pct"] is not None
-        else None
-    )
+    context["weekly_attendance_present_pct"] = weekly_attendance["present_pct"]
+    context["weekly_attendance_absent_pct"] = weekly_attendance["absent_pct"]
 
     context["student_activities"] = metrics.recent_student_activities(AssignmentSubmission.all_tenants)
 

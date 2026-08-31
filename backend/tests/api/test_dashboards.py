@@ -180,3 +180,4 @@ def test_admin_dashboard_summary_includes_eduportal_widgets(
     assert data["recent_activity"][0]["title"] == "New payment received"
     assert "weeks" in data["calendar"]
     assert "recent_logins" in data
+    assert len(data["weekly_attendance"]["days"]) == 5
