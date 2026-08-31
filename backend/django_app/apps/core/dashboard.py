@@ -21,7 +21,6 @@ import json
 from datetime import timedelta
 
 from django.db.models import Count, Q
-from django.db.models.functions import TruncMonth
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -56,50 +55,13 @@ def _revenue_chart_json(days: int = 30) -> str:
 
 
 def _monthly_enrollment_chart_json() -> str:
-    six_months_ago = (timezone.now() - timedelta(days=180)).replace(
-        day=1, hour=0, minute=0, second=0, microsecond=0
-    )
-    enrollments_by_month = (
-        Student.all_tenants.filter(created_at__gte=six_months_ago)
-        .annotate(month=TruncMonth("created_at"))
-        .values("month")
-        .annotate(count=Count("id"))
-        .order_by("month")
-    )
-    months_lookup = {row["month"].strftime("%Y-%m"): row["count"] for row in enrollments_by_month}
-    labels, values = [], []
-    cursor = six_months_ago
-    now = timezone.now()
-    while cursor <= now:
-        labels.append(cursor.strftime("%b"))
-        values.append(months_lookup.get(cursor.strftime("%Y-%m"), 0))
-        cursor = (cursor + timedelta(days=32)).replace(day=1)
-
-    return _line_chart_json(labels, values, "New students")
+    series = metrics.enrollment_monthly_series(Student.all_tenants)
+    return _line_chart_json([row["label"] for row in series], [row["count"] for row in series], "New students")
 
 
-def _weekly_enrollment_chart_json(weeks: int = 8) -> str:
-    today = timezone.localdate()
-    start = today - timedelta(weeks=weeks - 1, days=today.weekday())
-    rows = (
-        Student.all_tenants.filter(created_at__date__gte=start)
-        .values("created_at__date")
-        .annotate(count=Count("id"))
-    )
-    counts_by_date = {row["created_at__date"]: row["count"] for row in rows}
-
-    labels, values = [], []
-    cursor = start
-    for _ in range(weeks):
-        week_end = cursor + timedelta(days=6)
-        week_total = sum(
-            count for d, count in counts_by_date.items() if cursor <= d <= week_end
-        )
-        labels.append(f"{cursor.strftime('%d %b')}")
-        values.append(week_total)
-        cursor += timedelta(days=7)
-
-    return _line_chart_json(labels, values, "New students")
+def _weekly_enrollment_chart_json() -> str:
+    series = metrics.enrollment_weekly_series(Student.all_tenants)
+    return _line_chart_json([row["label"] for row in series], [row["count"] for row in series], "New students")
 
 
 def _line_chart_json(labels: list[str], values: list[int], label: str) -> str:
