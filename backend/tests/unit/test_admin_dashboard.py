@@ -78,7 +78,8 @@ def test_dashboard_today_collection_and_receivables(
 
     defaulters = response.context["top_defaulters"]
     assert len(defaulters) == 1
-    assert defaulters[0]["student"] == student
+    assert defaulters[0]["student_public_id"] == str(student.public_id)
+    assert defaulters[0]["student_name"] == str(student)
     assert defaulters[0]["outstanding_minor"] == overdue.total_minor
     assert defaulters[0]["days_overdue"] == 10
 

@@ -36,7 +36,7 @@
                         {% for entry in top_defaulters %}
                             <div class="border-b border-base-100 flex gap-2 items-center justify-between last:border-0 last:pb-0 pb-3 text-sm dark:border-base-800">
                                 <div class="flex flex-col overflow-hidden">
-                                    <span class="font-medium overflow-hidden text-base-900 text-ellipsis whitespace-nowrap dark:text-base-100">{{ entry.student }}</span>
+                                    <span class="font-medium overflow-hidden text-base-900 text-ellipsis whitespace-nowrap dark:text-base-100">{{ entry.student_name }}</span>
                                     <span class="text-base-400 text-xs">{{ entry.days_overdue }} {% translate "days overdue" %}</span>
                                 </div>
                                 <span class="font-semibold text-red-600 dark:text-red-500">{{ entry.outstanding_minor|floatformat:0 }}</span>
