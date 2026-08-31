@@ -1,0 +1,36 @@
+{% load i18n unfold %}
+{% comment %}Real Male/Female/Other breakdown from Student.gender — see
+   apps.core.dashboard_metrics.gender_breakdown.{% endcomment %}
+{% component "unfold/components/card.html" with title=_("Student distribution") %}
+    <div class="flex items-center gap-6">
+        <div class="relative h-40 w-40 shrink-0">
+            <canvas class="chart" data-type="doughnut" data-value="{{ student_gender_chart_json }}"></canvas>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="font-semibold text-2xl text-base-900 dark:text-base-100">{{ student_gender_total }}</span>
+                <span class="text-[10px] text-base-500 dark:text-base-400">{% translate "Total" %}</span>
+            </div>
+        </div>
+        <div class="flex flex-col gap-2 text-sm">
+            <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full" style="background:#3b82f6"></span>
+                {% translate "Male" %}: <span class="font-semibold">{{ student_gender_breakdown.male }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full" style="background:#f59e0b"></span>
+                {% translate "Female" %}: <span class="font-semibold">{{ student_gender_breakdown.female }}</span>
+            </div>
+            {% if student_gender_breakdown.other %}
+                <div class="flex items-center gap-2">
+                    <span class="h-2.5 w-2.5 rounded-full" style="background:#8b5cf6"></span>
+                    {% translate "Other" %}: <span class="font-semibold">{{ student_gender_breakdown.other }}</span>
+                </div>
+            {% endif %}
+            {% if student_gender_breakdown.unspecified %}
+                <div class="flex items-center gap-2">
+                    <span class="h-2.5 w-2.5 rounded-full" style="background:#cbd5e1"></span>
+                    {% translate "Unspecified" %}: <span class="font-semibold">{{ student_gender_breakdown.unspecified }}</span>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+{% endcomponent %}

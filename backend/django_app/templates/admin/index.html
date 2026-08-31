@@ -10,14 +10,41 @@
 
 {% block content %}
     <div class="flex flex-col gap-6">
+        {% if kpi_cards %}
+            {% include "admin/dashboard/stat_cards.html" %}
+        {% endif %}
+
+        {% comment %}Two-column analytics area + a compact right panel (calendar,
+           notices, recent activity) stacked in the 3rd column — the
+           "right dashboard panel" from the brief.{% endcomment %}
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div class="lg:col-span-2 flex flex-col gap-6 lg:flex-row">
+                <div class="lg:w-1/2">{% include "admin/dashboard/student_distribution.html" %}</div>
+                <div class="lg:w-1/2">{% include "admin/dashboard/enrollment_chart.html" %}</div>
+            </div>
+            <div class="flex flex-col gap-6">
+                {% include "admin/dashboard/calendar.html" %}
+                {% include "admin/dashboard/recent_activity.html" %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div>{% include "admin/dashboard/attendance.html" %}</div>
+            <div>{% include "admin/dashboard/activities.html" %}</div>
+            <div>{% include "admin/dashboard/messages.html" %}</div>
+        </div>
+
         {% if stat_cards %}
-            <div class="gap-4 grid grid-cols-2 lg:grid-cols-6">
-                {% for card in stat_cards %}
-                    {% component "unfold/components/card.html" with icon=card.icon %}
-                        <div class="font-semibold text-2xl text-base-900 dark:text-base-100">{{ card.value }}</div>
-                        <div class="text-base-500 text-sm dark:text-base-400">{{ card.title }}</div>
-                    {% endcomponent %}
-                {% endfor %}
+            <div class="border-t border-base-100 pt-6 dark:border-base-800">
+                <h2 class="mb-3 text-sm font-semibold text-base-500 dark:text-base-400">{% translate "Operational overview" %}</h2>
+                <div class="gap-4 grid grid-cols-2 lg:grid-cols-6">
+                    {% for card in stat_cards %}
+                        {% component "unfold/components/card.html" with icon=card.icon size="md" %}
+                            <div class="font-semibold text-2xl text-base-900 dark:text-base-100">{{ card.value }}</div>
+                            <div class="text-base-500 text-sm dark:text-base-400">{{ card.title }}</div>
+                        {% endcomponent %}
+                    {% endfor %}
+                </div>
             </div>
         {% endif %}
 
@@ -110,12 +137,6 @@
                 {% endcomponent %}
             </div>
         </div>
-
-        {% if enrollment_chart_json %}
-            {% component "unfold/components/card.html" with title=_("New student enrollments (last 6 months)") %}
-                {% component "unfold/components/chart/bar.html" with data=enrollment_chart_json height="220" %}{% endcomponent %}
-            {% endcomponent %}
-        {% endif %}
 
         {% include "unfold/helpers/history.html" %}
     </div>

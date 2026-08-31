@@ -26,6 +26,14 @@ GENDER_CHOICES = [
     ("other", "Other"),
 ]
 
+ACHIEVEMENT_CATEGORY_CHOICES = [
+    ("academic", "Academic"),
+    ("sports", "Sports"),
+    ("arts", "Arts"),
+    ("leadership", "Leadership"),
+    ("other", "Other"),
+]
+
 
 class Student(BaseModel):
     """A school's admission record for one learner. `user` is nullable —
@@ -88,3 +96,28 @@ class Student(BaseModel):
                 prefix=f"{self.school.code}-",
             )
         super().save(*args, **kwargs)
+
+
+class Achievement(BaseModel):
+    """A recognized award/achievement for a student (academic, sports,
+    arts, leadership, etc.) — backs the Admin dashboard's "Achievements"
+    KPI card with a real, queryable count instead of an invented number.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    school = models.ForeignKey("schools.School", on_delete=models.PROTECT, related_name="achievements")
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="achievements")
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=20, choices=ACHIEVEMENT_CATEGORY_CHOICES, default="academic")
+    description = models.TextField(blank=True, default="")
+    awarded_on = models.DateField()
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "students_achievement"
+        ordering = ["-awarded_on"]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.student})"

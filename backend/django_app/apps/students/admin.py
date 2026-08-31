@@ -7,7 +7,7 @@ from apps.core.admin import TenantAdminMixin, TenantFKAdminMixin
 from apps.parents.models import GuardianStudent
 
 from .forms import StudentAdminForm, save_student_photo
-from .models import Student
+from .models import Achievement, Student
 from .services.student_service import provision_login
 
 
@@ -81,3 +81,11 @@ class StudentAdmin(TenantAdminMixin, ModelAdmin):
                 inline_form.instance.created_by = request.user
             inline_form.instance.updated_by = request.user
         formset.save()
+
+
+@admin.register(Achievement)
+class AchievementAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["title", "student", "category", "school", "awarded_on"]
+    search_fields = ["title", "student__first_name", "student__last_name"]
+    list_filter = ["category", "school"]
+    autocomplete_fields = ["organization", "school", "student"]
