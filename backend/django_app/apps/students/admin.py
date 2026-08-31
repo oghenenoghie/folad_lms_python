@@ -1,15 +1,36 @@
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 
-from apps.core.admin import TenantAdminMixin
+from apps.academics.models import Enrollment
+from apps.core.admin import TenantAdminMixin, TenantFKAdminMixin
+from apps.parents.models import GuardianStudent
 
+from .forms import StudentAdminForm, save_student_photo
 from .models import Student
 from .services.student_service import provision_login
 
 
+class EnrollmentInline(TenantFKAdminMixin, TabularInline):
+    model = Enrollment
+    fk_name = "student"
+    extra = 1
+    fields = ["class_arm", "academic_year", "status", "effective_from", "effective_to"]
+    autocomplete_fields = ["class_arm", "academic_year"]
+
+
+class GuardianStudentInline(TenantFKAdminMixin, TabularInline):
+    model = GuardianStudent
+    fk_name = "student"
+    extra = 1
+    fields = ["guardian", "relationship_type", "is_primary"]
+    autocomplete_fields = ["guardian"]
+
+
 @admin.register(Student)
 class StudentAdmin(TenantAdminMixin, ModelAdmin):
+    form = StudentAdminForm
+    inlines = [EnrollmentInline, GuardianStudentInline]
     list_display = ["admission_number", "first_name", "last_name", "school", "enrollment_status"]
     search_fields = ["admission_number", "first_name", "last_name"]
     list_filter = ["enrollment_status", "school"]
@@ -21,6 +42,7 @@ class StudentAdmin(TenantAdminMixin, ModelAdmin):
         # equivalent of the auto-provisioning that API creation gets there.
         creating = not change
         super().save_model(request, obj, form, change)
+        save_student_photo(student=obj, form=form)
         if not creating or obj.user_id is not None:
             return
 
@@ -46,3 +68,16 @@ class StudentAdmin(TenantAdminMixin, ModelAdmin):
                 "— shown once, save it now.",
                 level=messages.SUCCESS,
             )
+
+    def save_formset(self, request, form, formset, change):
+        # Enrollment/GuardianStudent both require `organization`, which the
+        # inline form never exposes (it's always derived from the parent
+        # Student, never picked by hand) — backfill it, plus the usual
+        # audit fields, before Django's own formset.save() does the
+        # actual create/update/delete.
+        for inline_form in formset.forms:
+            if inline_form.instance.pk is None:
+                inline_form.instance.organization = form.instance.organization
+                inline_form.instance.created_by = request.user
+            inline_form.instance.updated_by = request.user
+        formset.save()
