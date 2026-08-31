@@ -15,6 +15,11 @@ class StudentSerializer(serializers.ModelSerializer):
     # empty set.
     school = PublicIdRelatedField(queryset=School.objects)
     user = PublicIdRelatedField(queryset=User.objects, required=False, allow_null=True)
+    # Set only on the in-memory instance student_service.create_student()
+    # returns right after auto-provisioning a login — never persisted,
+    # never present on a student re-fetched from the DB, so this is the
+    # one and only time the plaintext password is ever visible.
+    generated_password = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
@@ -25,9 +30,11 @@ class StudentSerializer(serializers.ModelSerializer):
             "admission_number",
             "first_name",
             "last_name",
+            "email",
             "date_of_birth",
             "gender",
             "enrollment_status",
+            "generated_password",
         ]
         # Both fields of uq_student_school_admission_number are serializer
         # fields, so DRF would otherwise auto-add a UniqueTogetherValidator
@@ -35,3 +42,6 @@ class StudentSerializer(serializers.ModelSerializer):
         # 409 the EnvelopeCreateMixin IntegrityError handler produces (see
         # core/generics.py).
         validators = []
+
+    def get_generated_password(self, obj):
+        return getattr(obj, "_generated_password", None)

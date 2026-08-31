@@ -63,6 +63,94 @@ def test_student_create_list_retrieve_update_delete(api_client, organization, us
 
 
 @pytest.mark.django_db
+def test_student_create_auto_provisions_login_when_no_email_given(
+    api_client, organization, user_factory, school_factory,
+):
+    school = school_factory(organization=organization, code="TS3")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/students",
+        {
+            "school": str(school.public_id),
+            "admission_number": "A050",
+            "first_name": "Nia",
+            "last_name": "Okoro",
+            "date_of_birth": "2013-05-01",
+        },
+        format="json",
+    )
+    assert create.status_code == 201
+    data = create.json()["data"]
+    assert data["user"] is not None
+    password = data["generated_password"]
+    assert password and len(password) == 12
+
+    student = Student.all_tenants.get(public_id=data["public_id"])
+    login_email = student.user.email
+    assert login_email.endswith("@students.local")
+
+    api_client.credentials()
+    login_resp = api_client.post(
+        "/api/v1/auth/login", {"email": login_email, "password": password}, format="json"
+    )
+    assert login_resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_student_create_with_email_uses_it_as_login(
+    api_client, organization, user_factory, school_factory,
+):
+    school = school_factory(organization=organization, code="TS4")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/students",
+        {
+            "school": str(school.public_id),
+            "admission_number": "A051",
+            "first_name": "Femi",
+            "last_name": "Adeyemi",
+            "email": "femi@example.com",
+            "date_of_birth": "2013-05-01",
+        },
+        format="json",
+    )
+    assert create.status_code == 201
+    student = Student.all_tenants.get(public_id=create.json()["data"]["public_id"])
+    assert student.user.email == "femi@example.com"
+
+
+@pytest.mark.django_db
+def test_student_create_with_email_already_in_use_returns_conflict(
+    api_client, organization, user_factory, school_factory,
+):
+    school = school_factory(organization=organization, code="TS5")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    user_factory(organization=organization, email="taken@example.com")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    create = api_client.post(
+        "/api/v1/students",
+        {
+            "school": str(school.public_id),
+            "admission_number": "A052",
+            "first_name": "Kofi",
+            "last_name": "Mensah",
+            "email": "taken@example.com",
+            "date_of_birth": "2013-05-01",
+        },
+        format="json",
+    )
+    assert create.status_code == 409
+
+
+@pytest.mark.django_db
 def test_student_duplicate_admission_number_returns_conflict(
     api_client, organization, user_factory, school_factory
 ):

@@ -29,9 +29,12 @@ GENDER_CHOICES = [
 
 class Student(BaseModel):
     """A school's admission record for one learner. `user` is nullable —
-    per §4 ARCHITECTURE.md's ERD (USER ||--o| STUDENT : profile), a student
-    doesn't require a platform login account (e.g. a young child whose
-    guardian manages everything); when one exists, it's a strict one-to-one.
+    per §4 ARCHITECTURE.md's ERD (USER ||--o| STUDENT : profile) a student
+    doesn't strictly need one — but student_service.create_student()
+    auto-provisions a login for every new student that doesn't already
+    have one (see provision_login()), using `email` when given or a
+    generated placeholder address otherwise. Null stays reachable for a
+    student explicitly linked to an existing account instead.
     """
 
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
@@ -46,6 +49,7 @@ class Student(BaseModel):
     admission_number = models.CharField(max_length=30)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
+    email = models.EmailField(blank=True, default="")
     date_of_birth = models.DateField()
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default="")
     enrollment_status = models.CharField(
