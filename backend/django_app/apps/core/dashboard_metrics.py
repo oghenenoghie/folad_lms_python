@@ -8,6 +8,7 @@ tenant-scoped `objects` manager (single organization, via RLS/TenantManager).
 No organization/tenant concept lives here — that's entirely the caller's
 job — which is what lets both call sites share one implementation.
 """
+import calendar as calendar_module
 from datetime import date, timedelta
 
 from django.db.models import Count, Q, QuerySet, Sum, Value
@@ -140,3 +141,146 @@ def top_defaulters(invoice_qs: QuerySet, limit: int = 5) -> list[dict]:
         entry["days_overdue"] = max(entry["days_overdue"], days_overdue)
 
     return sorted(by_student.values(), key=lambda entry: -entry["outstanding_minor"])[:limit]
+
+
+def gender_breakdown(student_qs: QuerySet) -> dict[str, int]:
+    """Real male/female/other/unspecified counts for the student
+    distribution donut — Student.gender is a real, populated field, not a
+    fabricated proportion."""
+    counts = student_qs.values("gender").annotate(count=Count("id"))
+    breakdown = {"male": 0, "female": 0, "other": 0, "unspecified": 0}
+    for row in counts:
+        key = row["gender"] or "unspecified"
+        breakdown[key if key in breakdown else "other"] += row["count"]
+    return breakdown
+
+
+def recent_messages(message_qs: QuerySet, limit: int = 5) -> list[dict]:
+    messages = message_qs.select_related("sender").order_by("-created_at")[:limit]
+    return [
+        {
+            "sender_name": f"{m.sender.first_name} {m.sender.last_name}".strip() or m.sender.email,
+            "sender_email": m.sender.email,
+            "subject": m.subject,
+            "preview": (m.body[:120] + "…") if len(m.body) > 120 else m.body,
+            "created_at": m.created_at,
+            "is_read": m.is_read,
+        }
+        for m in messages
+    ]
+
+
+def unread_message_count(message_qs: QuerySet) -> int:
+    return message_qs.filter(is_read=False).count()
+
+
+def recent_announcements(announcement_qs: QuerySet, limit: int = 5) -> list[dict]:
+    announcements = announcement_qs.order_by("-is_pinned", "-created_at")[:limit]
+    return [
+        {
+            "title": a.title,
+            "preview": (a.body[:140] + "…") if len(a.body) > 140 else a.body,
+            "audience": a.audience,
+            "is_pinned": a.is_pinned,
+            "published_at": a.published_at,
+            "created_at": a.created_at,
+        }
+        for a in announcements
+    ]
+
+
+def recent_student_activities(submission_qs: QuerySet, limit: int = 5) -> list[dict]:
+    """Recent assignment submissions — the one genuinely "student did a
+    thing on this date with this status" event stream already in the
+    schema, used for the dashboard's Student Activities card."""
+    submissions = submission_qs.select_related("student", "assignment").order_by("-submitted_at")[:limit]
+    return [
+        {
+            "title": f"{s.student} submitted “{s.assignment.title}”",
+            "status": s.status,
+            "date": s.submitted_at,
+        }
+        for s in submissions
+    ]
+
+
+def recent_notifications(notification_qs: QuerySet, limit: int = 8) -> list[dict]:
+    notifications = notification_qs.order_by("-created_at")[:limit]
+    return [
+        {
+            "title": n.title,
+            "body": n.body,
+            "notification_type": n.notification_type,
+            "is_read": n.is_read,
+            "created_at": n.created_at,
+        }
+        for n in notifications
+    ]
+
+
+def month_calendar(
+    year: int,
+    month: int,
+    *,
+    exam_schedule_qs: QuerySet,
+    term_qs: QuerySet,
+    announcement_qs: QuerySet,
+    achievement_qs: QuerySet,
+) -> dict:
+    """A real month-grid calendar: every marked day carries at least one
+    genuine event (an exam date, a term boundary, a published announcement,
+    or an awarded achievement) — never a placeholder date."""
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar_module.monthrange(year, month)[1])
+    today = timezone.localdate()
+
+    events_by_day: dict[date, list[str]] = {}
+
+    def add_event(day: date | None, label: str) -> None:
+        if day is None or day < month_start or day > month_end:
+            return
+        events_by_day.setdefault(day, []).append(label)
+
+    for exam_schedule in exam_schedule_qs.filter(
+        date__gte=month_start, date__lte=month_end
+    ).select_related("exam"):
+        add_event(exam_schedule.date, f"Exam: {exam_schedule.exam.name}")
+
+    for term in term_qs.filter(
+        Q(start_date__gte=month_start, start_date__lte=month_end)
+        | Q(end_date__gte=month_start, end_date__lte=month_end)
+    ):
+        add_event(term.start_date, f"Term starts: {term.name}")
+        add_event(term.end_date, f"Term ends: {term.name}")
+
+    for announcement in announcement_qs.filter(
+        published_at__date__gte=month_start, published_at__date__lte=month_end
+    ):
+        add_event(announcement.published_at.date(), f"Notice: {announcement.title}")
+
+    for achievement in achievement_qs.filter(
+        awarded_on__gte=month_start, awarded_on__lte=month_end
+    ).select_related("student"):
+        add_event(achievement.awarded_on, f"Achievement: {achievement.student} — {achievement.title}")
+
+    weeks = []
+    for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(year, month):
+        weeks.append(
+            [
+                {
+                    "date": day,
+                    "in_month": day.month == month,
+                    "is_today": day == today,
+                    "events": events_by_day.get(day, []),
+                }
+                for day in week
+            ]
+        )
+
+    return {
+        "year": year,
+        "month": month,
+        "month_label": month_start.strftime("%B %Y"),
+        "weekday_labels": [calendar_module.day_abbr[i] for i in range(7)],
+        "weeks": weeks,
+    }

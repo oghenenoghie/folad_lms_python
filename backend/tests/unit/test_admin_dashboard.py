@@ -159,3 +159,167 @@ def test_dashboard_attendance_today_with_no_records_shows_dash(
     assert response.status_code == 200
     cards = {card["title"]: card["value"] for card in response.context["stat_cards"]}
     assert cards["Attendance today"] == "—"
+
+
+@pytest.mark.django_db
+def test_dashboard_kpi_cards_reflect_real_counts(
+    client, superuser, organization, school_factory, student_factory, staff_factory,
+    teacher_factory, achievement_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    student = student_factory(school=school, admission_number="K001")
+    staff = staff_factory(school=school, employee_number="EK001")
+    teacher_factory(staff=staff)
+    achievement_factory(student=student, title="Debate champion")
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    kpis = {card["title"]: card["value"] for card in response.context["kpi_cards"]}
+    assert kpis["Total Students"] == 1
+    assert kpis["Total Teachers"] == 1
+    assert kpis["Total Staff"] == 1
+    assert kpis["Achievements"] == 1
+    tones = {card["title"]: card["tone"] for card in response.context["kpi_cards"]}
+    assert tones["Achievements"] == "blue"
+    assert tones["Total Students"] == "amber"
+
+
+@pytest.mark.django_db
+def test_dashboard_gender_breakdown_reflects_real_students(
+    client, superuser, organization, school_factory, student_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    student_factory(school=school, admission_number="G001", gender="male")
+    student_factory(school=school, admission_number="G002", gender="male")
+    student_factory(school=school, admission_number="G003", gender="female")
+    student_factory(school=school, admission_number="G004", gender="")
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    breakdown = response.context["student_gender_breakdown"]
+    assert breakdown["male"] == 2
+    assert breakdown["female"] == 1
+    assert breakdown["unspecified"] == 1
+    assert response.context["student_gender_total"] == 4
+
+
+@pytest.mark.django_db
+def test_dashboard_messages_and_unread_count(
+    client, superuser, organization, user_factory, message_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    sender = user_factory(organization=organization, email="sender@example.com")
+    message_factory(sender=sender, recipient=superuser, subject="Hello", body="Please review")
+    message_factory(sender=sender, recipient=superuser, subject="Read one", is_read=True)
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    messages = response.context["recent_messages"]
+    assert len(messages) == 2
+    assert response.context["unread_message_count"] == 1
+
+
+@pytest.mark.django_db
+def test_dashboard_notices_from_announcements(
+    client, superuser, organization, school_factory, announcement_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    announcement_factory(school=school, title="Sports day", is_pinned=True)
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    notices = response.context["notices"]
+    assert len(notices) == 1
+    assert notices[0]["title"] == "Sports day"
+
+
+@pytest.mark.django_db
+def test_dashboard_recent_activity_from_notifications(
+    client, superuser, organization, notification_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    notification_factory(recipient=superuser, title="New payment received")
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    activity = response.context["recent_activity"]
+    assert len(activity) == 1
+    assert activity[0]["title"] == "New payment received"
+
+
+@pytest.mark.django_db
+def test_dashboard_calendar_includes_real_events_this_month(
+    client, superuser, organization, school_factory, student_factory, achievement_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    student = student_factory(school=school, admission_number="C001")
+    today = datetime.date.today()
+    achievement_factory(student=student, title="Chess champion", awarded_on=today)
+    client.force_login(superuser)
+    activate_organization(None)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 200
+    calendar = response.context["calendar"]
+    assert calendar["year"] == today.year
+    assert calendar["month"] == today.month
+    matching_day = next(
+        day
+        for week in calendar["weeks"]
+        for day in week
+        if day["date"] == today
+    )
+    assert any("Chess champion" in event for event in matching_day["events"])
+
+
+@pytest.mark.django_db
+def test_achievement_admin_changelist_and_add(
+    client, superuser, organization, school_factory, student_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    student = student_factory(school=school, admission_number="AD001")
+    client.force_login(superuser)
+    activate_organization(None)
+
+    changelist = client.get(reverse("admin:students_achievement_changelist"))
+    assert changelist.status_code == 200
+
+    response = client.post(
+        reverse("admin:students_achievement_add"),
+        {
+            "organization": organization.id,
+            "school": school.id,
+            "student": student.id,
+            "title": "Regional spelling bee winner",
+            "category": "academic",
+            "description": "",
+            "awarded_on": "2026-02-01",
+        },
+        follow=True,
+    )
+    assert response.redirect_chain, response.context["errors"] if hasattr(response, "context") and response.context and "errors" in response.context else response.content
+
+    from apps.students.models import Achievement
+
+    assert Achievement.all_tenants.filter(title="Regional spelling bee winner").exists()

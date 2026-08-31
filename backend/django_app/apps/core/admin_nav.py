@@ -137,6 +137,12 @@ NAVIGATION = [
                 "link": reverse_lazy("admin:students_student_changelist"),
                 "permission": _view_perm("students", "student"),
             },
+            {
+                "title": "Achievements",
+                "icon": "emoji_events",
+                "link": reverse_lazy("admin:students_achievement_changelist"),
+                "permission": _view_perm("students", "achievement"),
+            },
         ],
     },
     {

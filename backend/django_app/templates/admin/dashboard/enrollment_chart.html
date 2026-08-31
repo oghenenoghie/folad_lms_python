@@ -1,0 +1,24 @@
+{% load i18n unfold %}
+{% comment %}Real new-student counts, bucketed monthly (last 6 months) or weekly
+   (last 8 weeks) — see apps.core.dashboard._monthly_enrollment_chart_json
+   / _weekly_enrollment_chart_json. The two ranges are rendered up front
+   and toggled client-side (no extra request) with Alpine.js, which Unfold
+   already loads for its own components.{% endcomment %}
+<div x-data="{ range: 'monthly' }">
+    {% component "unfold/components/card.html" with title=_("Enrollment growth") %}
+        <div class="mb-3 flex justify-end gap-1 text-xs">
+            <button type="button" @click="range = 'weekly'"
+                :class="range === 'weekly' ? 'bg-primary-600 text-white' : 'bg-base-100 text-base-600 dark:bg-base-800 dark:text-base-300'"
+                class="rounded-md px-2 py-1 font-medium">{% translate "Weekly" %}</button>
+            <button type="button" @click="range = 'monthly'"
+                :class="range === 'monthly' ? 'bg-primary-600 text-white' : 'bg-base-100 text-base-600 dark:bg-base-800 dark:text-base-300'"
+                class="rounded-md px-2 py-1 font-medium">{% translate "Monthly" %}</button>
+        </div>
+        <div class="h-56" x-show="range === 'monthly'">
+            {% component "unfold/components/chart/line.html" with data=enrollment_chart_json_monthly height="220" %}{% endcomponent %}
+        </div>
+        <div class="h-56" x-show="range === 'weekly'" x-cloak>
+            {% component "unfold/components/chart/line.html" with data=enrollment_chart_json_weekly height="220" %}{% endcomponent %}
+        </div>
+    {% endcomponent %}
+</div>

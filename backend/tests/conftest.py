@@ -155,6 +155,25 @@ def student_factory(db):
 
 
 @pytest.fixture
+def achievement_factory(db):
+    from apps.students.models import Achievement
+    from apps.tenancy.context import activate_organization
+
+    def make(*, student, title="Science Fair Winner", awarded_on="2026-01-15", **extra):
+        activate_organization(student.organization_id)
+        return Achievement.all_tenants.create(
+            organization=student.organization,
+            school=student.school,
+            student=student,
+            title=title,
+            awarded_on=awarded_on,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
 def guardian_student_factory(db):
     from apps.parents.models import GuardianStudent
     from apps.tenancy.context import activate_organization
