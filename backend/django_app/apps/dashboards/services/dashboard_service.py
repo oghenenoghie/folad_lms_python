@@ -15,8 +15,9 @@ from apps.academics.models import ClassSubject, Enrollment
 from apps.accounts.models import LoginHistory
 from apps.assignments.models import Assignment, AssignmentSubmission
 from apps.attendance.models import Attendance
+from apps.communication.models import Announcement, Message, Notification
 from apps.core import dashboard_metrics as metrics
-from apps.examinations.models import Result
+from apps.examinations.models import ExamSchedule, Result
 from apps.finance.models import Invoice, LedgerEntry, Payment
 from apps.finance.services.invoice_service import amount_paid_net_minor
 from apps.hostel.models import HostelIncident
@@ -115,8 +116,8 @@ def _guardian_summary(guardian) -> dict:
 
 
 def _admin_summary(organization) -> dict:
-    from apps.staff.models import Staff
-    from apps.students.models import Student
+    from apps.staff.models import Staff, Teacher
+    from apps.students.models import Achievement, Student
 
     ledger_totals = LedgerEntry.objects.filter(account="accounts_receivable").aggregate(
         debit=Sum("debit_minor"), credit=Sum("credit_minor")
@@ -128,13 +129,16 @@ def _admin_summary(organization) -> dict:
     # organization's tenant-scoped querysets instead of all_tenants. Widgets
     # that would require fabricating data that doesn't exist anywhere in
     # this schema (an admissions funnel, AI-generated insights, per-staff
-    # productivity scores, an events calendar) are deliberately omitted here
-    # too, for the same reason.
+    # productivity scores) are deliberately omitted here too, for the same
+    # reason.
     attendance_pct = metrics.attendance_today_pct(Attendance.objects)
+    today = timezone.localdate()
 
     return {
         "total_students": Student.objects.filter(deleted_at__isnull=True).count(),
+        "total_teachers": Teacher.objects.count(),
         "total_staff": Staff.objects.filter(deleted_at__isnull=True).count(),
+        "total_achievements": Achievement.objects.count(),
         "active_enrollments": Enrollment.objects.filter(status="active").count(),
         "net_receivable_minor": net_receivable_minor,
         "open_hostel_incidents": HostelIncident.objects.filter(status="open").count(),
@@ -148,7 +152,24 @@ def _admin_summary(organization) -> dict:
         "revenue_series": metrics.revenue_series(Payment.objects),
         "attendance_heatmap": metrics.attendance_heatmap(Attendance.objects),
         "top_defaulters": metrics.top_defaulters(Invoice.objects),
-        "recent_activity": [
+        "weekly_attendance": metrics.weekly_attendance_series(Attendance.objects),
+        "gender_breakdown": metrics.gender_breakdown(Student.objects),
+        "enrollment_series_monthly": metrics.enrollment_monthly_series(Student.objects),
+        "enrollment_series_weekly": metrics.enrollment_weekly_series(Student.objects),
+        "student_activities": metrics.recent_student_activities(AssignmentSubmission.objects),
+        "recent_messages": metrics.recent_messages(Message.objects),
+        "unread_message_count": metrics.unread_message_count(Message.objects),
+        "notices": metrics.recent_announcements(Announcement.objects),
+        "recent_activity": metrics.recent_notifications(Notification.objects),
+        "calendar": metrics.month_calendar(
+            today.year,
+            today.month,
+            exam_schedule_qs=ExamSchedule.objects,
+            term_qs=Term.objects,
+            announcement_qs=Announcement.objects,
+            achievement_qs=Achievement.objects,
+        ),
+        "recent_logins": [
             {
                 "email": login.user.email,
                 "success": login.success,

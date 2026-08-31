@@ -50,6 +50,52 @@ def new_admissions_this_month(student_qs: QuerySet) -> int:
     return student_qs.filter(created_at__date__gte=start_of_month).count()
 
 
+def enrollment_monthly_series(student_qs: QuerySet, months: int = 6) -> list[dict]:
+    """New-student counts bucketed by calendar month, trailing `months`
+    months (including the current one)."""
+    from django.db.models.functions import TruncMonth
+
+    start = (timezone.now() - timedelta(days=30 * months)).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    rows = (
+        student_qs.filter(created_at__gte=start)
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(count=Count("id"))
+    )
+    counts_by_month = {row["month"].strftime("%Y-%m"): row["count"] for row in rows}
+
+    series = []
+    cursor = start
+    now = timezone.now()
+    while cursor <= now:
+        key = cursor.strftime("%Y-%m")
+        series.append({"label": cursor.strftime("%b %Y"), "count": counts_by_month.get(key, 0)})
+        cursor = (cursor + timedelta(days=32)).replace(day=1)
+    return series
+
+
+def enrollment_weekly_series(student_qs: QuerySet, weeks: int = 8) -> list[dict]:
+    """New-student counts bucketed by calendar week (Monday-start),
+    trailing `weeks` weeks (including the current one)."""
+    today = timezone.localdate()
+    start = today - timedelta(weeks=weeks - 1, days=today.weekday())
+    rows = student_qs.filter(created_at__date__gte=start).values("created_at__date").annotate(
+        count=Count("id")
+    )
+    counts_by_date = {row["created_at__date"]: row["count"] for row in rows}
+
+    series = []
+    cursor = start
+    for _ in range(weeks):
+        week_end = cursor + timedelta(days=6)
+        week_total = sum(count for d, count in counts_by_date.items() if cursor <= d <= week_end)
+        series.append({"label": cursor.strftime("%d %b"), "count": week_total})
+        cursor += timedelta(days=7)
+    return series
+
+
 def revenue_series(payment_qs: QuerySet, days: int = 30) -> list[dict]:
     """One entry per day for the trailing `days` days (including today),
     zero-filled where nothing was collected — a caller-agnostic shape
@@ -70,6 +116,41 @@ def revenue_series(payment_qs: QuerySet, days: int = 30) -> list[dict]:
         series.append({"date": cursor, "amount_minor": totals_by_date.get(cursor) or 0})
         cursor += timedelta(days=1)
     return series
+
+
+def weekly_attendance_series(attendance_qs: QuerySet) -> dict:
+    """Real Monday-Friday attendance for the current week: per-day
+    present/absent percentages plus the week's overall present/absent
+    percentage — the "Weekly attendance" widget."""
+    today = timezone.localdate()
+    week_start = today - timedelta(days=today.weekday())
+    rows = (
+        attendance_qs.filter(date__gte=week_start, date__lte=today)
+        .values("date")
+        .annotate(total=Count("id"), present=Count("id", filter=Q(status="present")))
+    )
+    by_date = {row["date"]: row for row in rows}
+
+    weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    days = []
+    total_present = total_marked = 0
+    for offset in range(5):
+        day = week_start + timedelta(days=offset)
+        row = by_date.get(day)
+        if row and row["total"]:
+            present_pct = round(row["present"] * 100 / row["total"])
+            days.append({"label": weekday_labels[offset], "present_pct": present_pct, "absent_pct": 100 - present_pct})
+            total_present += row["present"]
+            total_marked += row["total"]
+        else:
+            days.append({"label": weekday_labels[offset], "present_pct": 0, "absent_pct": 0})
+
+    overall_present_pct = round(total_present * 100 / total_marked) if total_marked else None
+    return {
+        "days": days,
+        "present_pct": overall_present_pct,
+        "absent_pct": 100 - overall_present_pct if overall_present_pct is not None else None,
+    }
 
 
 def attendance_heatmap(attendance_qs: QuerySet, days: int = 7) -> dict:

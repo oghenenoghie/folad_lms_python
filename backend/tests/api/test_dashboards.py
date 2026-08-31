@@ -139,3 +139,45 @@ def test_admin_dashboard_summary_includes_real_finance_and_attendance_metrics(
     assert len(data["top_defaulters"]) == 1
     assert data["top_defaulters"][0]["student_public_id"] == str(student.public_id)
     assert data["attendance_heatmap"]["classes"][0]["values"][-1] == 100
+
+
+@pytest.mark.django_db
+def test_admin_dashboard_summary_includes_eduportal_widgets(
+    api_client, organization, user_factory, school_factory, student_factory, staff_factory,
+    teacher_factory, achievement_factory, message_factory, announcement_factory,
+    notification_factory,
+):
+    school = school_factory(organization=organization)
+    student_factory(school=school, admission_number="EW1", gender="male")
+    student_factory(school=school, admission_number="EW2", gender="female")
+    achievement_factory(student=student_factory(school=school, admission_number="EW3"), title="Top scorer")
+    staff = staff_factory(school=school, employee_number="EWS1")
+    teacher_factory(staff=staff)
+
+    admin = user_factory(organization=organization, email="admin3@example.com", password="s3cret-pass!")
+    sender = user_factory(organization=organization, email="sender3@example.com")
+    message_factory(sender=sender, recipient=admin, subject="Hello")
+    announcement_factory(school=school, title="Sports day")
+    notification_factory(recipient=admin, title="New payment received")
+
+    _login(api_client, "admin3@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/dashboard/summary")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    assert data["total_teachers"] == 1
+    assert data["total_achievements"] == 1
+    assert data["gender_breakdown"]["male"] == 1
+    assert data["gender_breakdown"]["female"] == 1
+    assert len(data["enrollment_series_monthly"]) > 0
+    assert len(data["enrollment_series_weekly"]) == 8
+    assert len(data["recent_messages"]) == 1
+    assert data["unread_message_count"] == 1
+    assert len(data["notices"]) == 1
+    assert data["notices"][0]["title"] == "Sports day"
+    assert len(data["recent_activity"]) == 1
+    assert data["recent_activity"][0]["title"] == "New payment received"
+    assert "weeks" in data["calendar"]
+    assert "recent_logins" in data
+    assert len(data["weekly_attendance"]["days"]) == 5
