@@ -11,7 +11,7 @@
 {% block content %}
     <div class="flex flex-col gap-6">
         {% if stat_cards %}
-            <div class="gap-4 grid grid-cols-2 lg:grid-cols-5">
+            <div class="gap-4 grid grid-cols-2 lg:grid-cols-6">
                 {% for card in stat_cards %}
                     {% component "unfold/components/card.html" with icon=card.icon %}
                         <div class="font-semibold text-2xl text-base-900 dark:text-base-100">{{ card.value }}</div>
@@ -22,10 +22,70 @@
         {% endif %}
 
         <div class="flex flex-col gap-6 lg:flex-row">
-            {% if enrollment_chart_json %}
+            {% if revenue_chart_json %}
                 <div class="lg:w-2/3">
-                    {% component "unfold/components/card.html" with title=_("New student enrollments (last 6 months)") %}
-                        {% component "unfold/components/chart/bar.html" with data=enrollment_chart_json height="260" %}{% endcomponent %}
+                    {% component "unfold/components/card.html" with title=_("Revenue (last 30 days)") footer=total_receivables_subtitle %}
+                        {% component "unfold/components/chart/bar.html" with data=revenue_chart_json height="260" %}{% endcomponent %}
+                    {% endcomponent %}
+                </div>
+            {% endif %}
+
+            <div class="lg:w-1/3">
+                {% component "unfold/components/card.html" with title=_("Top defaulters") %}
+                    <div class="flex flex-col gap-3">
+                        {% for entry in top_defaulters %}
+                            <div class="border-b border-base-100 flex gap-2 items-center justify-between last:border-0 last:pb-0 pb-3 text-sm dark:border-base-800">
+                                <div class="flex flex-col overflow-hidden">
+                                    <span class="font-medium overflow-hidden text-base-900 text-ellipsis whitespace-nowrap dark:text-base-100">{{ entry.student }}</span>
+                                    <span class="text-base-400 text-xs">{{ entry.days_overdue }} {% translate "days overdue" %}</span>
+                                </div>
+                                <span class="font-semibold text-red-600 dark:text-red-500">{{ entry.outstanding_minor|floatformat:0 }}</span>
+                            </div>
+                        {% empty %}
+                            <span class="text-base-400 text-sm">{% translate "No overdue invoices." %}</span>
+                        {% endfor %}
+                    </div>
+                {% endcomponent %}
+            </div>
+        </div>
+
+        <div class="flex flex-col gap-6 lg:flex-row">
+            {% if attendance_heatmap.classes %}
+                <div class="lg:w-2/3">
+                    {% component "unfold/components/card.html" with title=_("Class attendance (last 7 days)") %}
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr>
+                                        <th class="pb-2 pr-4 text-left text-base-500 dark:text-base-400">{% translate "Class" %}</th>
+                                        {% for date in attendance_heatmap.dates %}
+                                            <th class="pb-2 px-1 text-center font-medium text-base-500 dark:text-base-400">{{ date|date:"D" }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in attendance_heatmap.classes %}
+                                        <tr class="border-t border-base-100 dark:border-base-800">
+                                            <td class="py-2 pr-4 font-medium text-base-900 dark:text-base-100">{{ row.name }}</td>
+                                            {% for value in row.values %}
+                                                <td class="p-1 text-center">
+                                                    {% if value is not None %}
+                                                        <span class="inline-flex h-8 w-full items-center justify-center rounded-default text-xs font-semibold
+                                                            {% if value >= 90 %}bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200
+                                                            {% elif value >= 75 %}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
+                                                            {% else %}bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200{% endif %}">
+                                                            {{ value }}%
+                                                        </span>
+                                                    {% else %}
+                                                        <span class="text-base-300 dark:text-base-700">—</span>
+                                                    {% endif %}
+                                                </td>
+                                            {% endfor %}
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     {% endcomponent %}
                 </div>
             {% endif %}
@@ -50,6 +110,12 @@
                 {% endcomponent %}
             </div>
         </div>
+
+        {% if enrollment_chart_json %}
+            {% component "unfold/components/card.html" with title=_("New student enrollments (last 6 months)") %}
+                {% component "unfold/components/chart/bar.html" with data=enrollment_chart_json height="220" %}{% endcomponent %}
+            {% endcomponent %}
+        {% endif %}
 
         {% include "unfold/helpers/history.html" %}
     </div>
