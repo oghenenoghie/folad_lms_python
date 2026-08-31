@@ -151,6 +151,28 @@ def test_student_create_with_email_already_in_use_returns_conflict(
 
 
 @pytest.mark.django_db
+def test_student_photo_url_is_none_without_a_photo_and_a_real_url_with_one(
+    api_client, organization, user_factory, school_factory, student_factory,
+):
+    school = school_factory(organization=organization)
+    student = student_factory(school=school)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.view")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    resp = api_client.get(f"/api/v1/students/{student.public_id}")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["photo_url"] is None
+
+    student.photo_storage_key = "student-photos/1/abc.png"
+    student.save(update_fields=["photo_storage_key"])
+
+    resp = api_client.get(f"/api/v1/students/{student.public_id}")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["photo_url"]
+
+
+@pytest.mark.django_db
 def test_student_duplicate_admission_number_returns_conflict(
     api_client, organization, user_factory, school_factory
 ):
