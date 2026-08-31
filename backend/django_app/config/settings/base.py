@@ -196,6 +196,13 @@ TIME_ZONE = env("DJANGO_TIME_ZONE", default="UTC")
 USE_I18N = True
 USE_TZ = True
 
+# Localization is always on (USE_I18N=True), so a plain DATE_INPUT_FORMATS
+# setting here would be silently ignored — Django looks up locale format
+# modules first and only falls back to settings when the locale has none.
+# The actual override lives in config/formats/en/formats.py; see its
+# docstring for why (day-first/typed formats admin staff naturally use).
+FORMAT_MODULE_PATH = "config.formats"
+
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [DJANGO_APP_DIR / "static"]
