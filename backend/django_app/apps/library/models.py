@@ -61,7 +61,9 @@ class LibraryBook(BaseModel):
 class LibraryCopy(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     book = models.ForeignKey(LibraryBook, on_delete=models.PROTECT, related_name="copies")
-    copy_number = models.CharField(max_length=30)
+    # Optional: left blank, save() assigns the next copy number for this
+    # book (e.g. "1", "2", "3") — see apps.core.codegen.
+    copy_number = models.CharField(max_length=30, blank=True)
     status = models.CharField(max_length=20, choices=COPY_STATUS_CHOICES, default="available")
 
     objects = TenantManager()
@@ -77,6 +79,17 @@ class LibraryCopy(BaseModel):
     def __str__(self) -> str:
         return f"{self.book} #{self.copy_number}"
 
+    def save(self, *args, **kwargs):
+        if not self.copy_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.copy_number = next_sequence_code(
+                queryset=LibraryCopy.all_tenants.filter(book_id=self.book_id),
+                field_name="copy_number",
+                width=1,
+            )
+        super().save(*args, **kwargs)
+
 
 class LibraryMember(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
@@ -88,7 +101,9 @@ class LibraryMember(BaseModel):
     staff = models.ForeignKey(
         "staff.Staff", null=True, blank=True, on_delete=models.PROTECT, related_name="library_memberships"
     )
-    membership_number = models.CharField(max_length=30)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this school (e.g. "LIB-0001") — see apps.core.codegen.
+    membership_number = models.CharField(max_length=30, blank=True)
     is_active = models.BooleanField(default=True)
 
     objects = TenantManager()
@@ -111,6 +126,17 @@ class LibraryMember(BaseModel):
 
     def __str__(self) -> str:
         return self.membership_number
+
+    def save(self, *args, **kwargs):
+        if not self.membership_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.membership_number = next_sequence_code(
+                queryset=LibraryMember.all_tenants.filter(school_id=self.school_id),
+                field_name="membership_number",
+                prefix="LIB-",
+            )
+        super().save(*args, **kwargs)
 
 
 class LibraryLoan(BaseModel):

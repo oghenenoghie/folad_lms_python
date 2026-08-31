@@ -46,7 +46,9 @@ class Student(BaseModel):
         on_delete=models.PROTECT,
         related_name="student_profile",
     )
-    admission_number = models.CharField(max_length=30)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this school (e.g. "TS-0001") — see apps.core.codegen.
+    admission_number = models.CharField(max_length=30, blank=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     email = models.EmailField(blank=True, default="")
@@ -70,3 +72,14 @@ class Student(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name} ({self.admission_number})"
+
+    def save(self, *args, **kwargs):
+        if not self.admission_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.admission_number = next_sequence_code(
+                queryset=Student.all_tenants.filter(school_id=self.school_id),
+                field_name="admission_number",
+                prefix=f"{self.school.code}-",
+            )
+        super().save(*args, **kwargs)

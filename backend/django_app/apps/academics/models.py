@@ -66,7 +66,9 @@ class Subject(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     school = models.ForeignKey("schools.School", on_delete=models.PROTECT, related_name="subjects")
     name = models.CharField(max_length=150)
-    code = models.CharField(max_length=20)
+    # Optional: left blank, save() derives one from `name` (e.g. "MAT" for
+    # "Mathematics") — see apps.core.codegen.
+    code = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
 
     objects = TenantManager()
@@ -79,6 +81,17 @@ class Subject(BaseModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from apps.core.codegen import next_abbreviation_code
+
+            self.code = next_abbreviation_code(
+                queryset=Subject.all_tenants.filter(school_id=self.school_id),
+                field_name="code",
+                name=self.name,
+            )
+        super().save(*args, **kwargs)
 
 
 class ClassSubject(BaseModel):

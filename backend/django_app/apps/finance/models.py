@@ -167,7 +167,9 @@ class Invoice(BaseModel):
         "schools.AcademicYear", on_delete=models.PROTECT, related_name="invoices"
     )
     term = models.ForeignKey("schools.Term", on_delete=models.PROTECT, related_name="invoices")
-    invoice_number = models.CharField(max_length=40)
+    # Optional: left blank, save() assigns the next sequential number for
+    # this school (e.g. "INV-0001") — see apps.core.codegen.
+    invoice_number = models.CharField(max_length=40, blank=True)
     total_minor = models.BigIntegerField(default=0)
     currency_code = models.CharField(max_length=3)
     status = models.CharField(max_length=20, choices=INVOICE_STATUS_CHOICES, default="draft")
@@ -186,6 +188,17 @@ class Invoice(BaseModel):
 
     def __str__(self) -> str:
         return self.invoice_number
+
+    def save(self, *args, **kwargs):
+        if not self.invoice_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.invoice_number = next_sequence_code(
+                queryset=Invoice.all_tenants.filter(school_id=self.school_id),
+                field_name="invoice_number",
+                prefix="INV-",
+            )
+        super().save(*args, **kwargs)
 
 
 class InvoiceLine(BaseModel):
