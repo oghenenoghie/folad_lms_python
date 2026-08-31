@@ -96,3 +96,46 @@ def test_admin_dashboard_summary_falls_back_when_no_profile_linked(
     assert data["role"] == "admin"
     assert "total_students" in data
     assert "net_receivable_minor" in data
+
+
+@pytest.mark.django_db
+def test_admin_dashboard_summary_includes_real_finance_and_attendance_metrics(
+    api_client, organization, user_factory, school_factory, term_factory, academic_year_factory,
+    student_factory, invoice_factory, payment_factory, campus_factory, class_level_factory,
+    class_arm_factory, enrollment_factory, attendance_factory,
+):
+    import datetime
+
+    school = school_factory(organization=organization)
+    term = term_factory(academic_year=academic_year_factory(school=school))
+    student = student_factory(school=school)
+
+    paid_today = invoice_factory(
+        student=student, term=term, invoice_number="INV-T1", total_minor=100_000, status="issued"
+    )
+    payment_factory(invoice=paid_today, reference="PAY-T1", amount_minor=100_000)
+    overdue = invoice_factory(
+        student=student, term=term, invoice_number="INV-OD1", total_minor=50_000,
+        status="issued", due_date=datetime.date.today() - datetime.timedelta(days=3),
+    )
+
+    class_arm = class_arm_factory(class_level=class_level_factory(campus=campus_factory(school=school)))
+    academic_year = term.academic_year
+    enrollment = enrollment_factory(student=student, class_arm=class_arm, academic_year=academic_year)
+    attendance_factory(enrollment=enrollment, date=datetime.date.today(), status="present")
+
+    user_factory(organization=organization, email="admin2@example.com", password="s3cret-pass!")
+    _login(api_client, "admin2@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/dashboard/summary")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    assert data["today_collection_minor"] == 100_000
+    assert data["total_receivables_minor"] == overdue.total_minor
+    assert data["attendance_today_pct"] == 100.0
+    assert data["new_admissions_this_month"] == 1
+    assert len(data["revenue_series"]) == 30
+    assert len(data["top_defaulters"]) == 1
+    assert data["top_defaulters"][0]["student_public_id"] == str(student.public_id)
+    assert data["attendance_heatmap"]["classes"][0]["values"][-1] == 100

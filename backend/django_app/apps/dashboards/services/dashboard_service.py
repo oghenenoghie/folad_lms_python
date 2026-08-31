@@ -12,10 +12,12 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from apps.academics.models import ClassSubject, Enrollment
+from apps.accounts.models import LoginHistory
 from apps.assignments.models import Assignment, AssignmentSubmission
 from apps.attendance.models import Attendance
+from apps.core import dashboard_metrics as metrics
 from apps.examinations.models import Result
-from apps.finance.models import Invoice, LedgerEntry
+from apps.finance.models import Invoice, LedgerEntry, Payment
 from apps.finance.services.invoice_service import amount_paid_net_minor
 from apps.hostel.models import HostelIncident
 from apps.library.models import LibraryLoan
@@ -121,6 +123,15 @@ def _admin_summary(organization) -> dict:
     )
     net_receivable_minor = (ledger_totals["debit"] or 0) - (ledger_totals["credit"] or 0)
 
+    # Real-data widgets shared with the Django Admin dashboard (see
+    # apps.core.dashboard) — same aggregate functions, just given this
+    # organization's tenant-scoped querysets instead of all_tenants. Widgets
+    # that would require fabricating data that doesn't exist anywhere in
+    # this schema (an admissions funnel, AI-generated insights, per-staff
+    # productivity scores, an events calendar) are deliberately omitted here
+    # too, for the same reason.
+    attendance_pct = metrics.attendance_today_pct(Attendance.objects)
+
     return {
         "total_students": Student.objects.filter(deleted_at__isnull=True).count(),
         "total_staff": Staff.objects.filter(deleted_at__isnull=True).count(),
@@ -130,4 +141,19 @@ def _admin_summary(organization) -> dict:
         "overdue_library_loans": LibraryLoan.objects.filter(
             status="borrowed", due_date__lt=datetime.date.today()
         ).count(),
+        "today_collection_minor": metrics.today_collection_minor(Payment.objects),
+        "total_receivables_minor": metrics.total_receivables_minor(Invoice.objects),
+        "attendance_today_pct": attendance_pct,
+        "new_admissions_this_month": metrics.new_admissions_this_month(Student.objects),
+        "revenue_series": metrics.revenue_series(Payment.objects),
+        "attendance_heatmap": metrics.attendance_heatmap(Attendance.objects),
+        "top_defaulters": metrics.top_defaulters(Invoice.objects),
+        "recent_activity": [
+            {
+                "email": login.user.email,
+                "success": login.success,
+                "created_at": login.created_at,
+            }
+            for login in LoginHistory.objects.select_related("user").order_by("-created_at")[:8]
+        ],
     }
