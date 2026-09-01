@@ -140,7 +140,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Railway CLI
-        run: curl -fsSL railway.com/install.sh | sh
+        # The installer puts the binary in ~/.railway/bin and only wires it
+        # into ~/.bash_profile for *future* shells — each workflow `run:`
+        # step is its own fresh, non-interactive shell, so that alone
+        # doesn't carry over. $GITHUB_PATH is the actual mechanism GitHub
+        # Actions gives you to persist a PATH addition to every later step
+        # in this job (confirmed against a real PR run: without this line
+        # the very next step fails with "railway: command not found").
+        run: |
+          curl -fsSL railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
 
       - name: Link to the project (via the production environment, as a base to duplicate from)
         run: railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_SOURCE_ENV"
