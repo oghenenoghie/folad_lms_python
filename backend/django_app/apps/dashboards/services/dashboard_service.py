@@ -84,6 +84,19 @@ def _student_summary(student) -> dict:
 
 def _teacher_summary(teacher) -> dict:
     today_weekday = timezone.now().strftime("%A").lower()
+    todays_slots = list(
+        TimetableSlot.objects.filter(teacher=teacher, day_of_week=today_weekday, is_active=True)
+        .select_related("class_subject__subject", "class_arm", "period")
+        .order_by("period__sequence")
+    )
+    pending_submissions = list(
+        AssignmentSubmission.objects.filter(
+            assignment__class_subject__teacher=teacher, status__in=["submitted", "late"]
+        )
+        .select_related("assignment", "student")
+        .order_by("-submitted_at")[:5]
+    )
+
     return {
         "class_subjects_count": ClassSubject.objects.filter(teacher=teacher, is_active=True).count(),
         "students_taught_count": Enrollment.objects.filter(
@@ -92,9 +105,26 @@ def _teacher_summary(teacher) -> dict:
         "pending_grading_count": AssignmentSubmission.objects.filter(
             assignment__class_subject__teacher=teacher, status__in=["submitted", "late"]
         ).count(),
-        "todays_periods_count": TimetableSlot.objects.filter(
-            teacher=teacher, day_of_week=today_weekday, is_active=True
-        ).count(),
+        "todays_periods_count": len(todays_slots),
+        "todays_periods": [
+            {
+                "period": slot.period.name,
+                "start_time": slot.period.start_time.strftime("%H:%M"),
+                "end_time": slot.period.end_time.strftime("%H:%M"),
+                "subject": slot.class_subject.subject.name,
+                "class_arm": str(slot.class_arm),
+            }
+            for slot in todays_slots
+        ],
+        "pending_submissions": [
+            {
+                "assignment": submission.assignment.title,
+                "student": f"{submission.student.first_name} {submission.student.last_name}",
+                "submitted_at": submission.submitted_at,
+                "status": submission.status,
+            }
+            for submission in pending_submissions
+        ],
     }
 
 
