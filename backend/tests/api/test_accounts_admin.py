@@ -81,6 +81,30 @@ def test_superuser_user_crud_with_role_assignment_and_generated_password(
 
 
 @pytest.mark.django_db
+def test_user_and_role_creation_default_to_the_acting_superusers_organization(
+    api_client, organization, user_factory
+):
+    """The frontend has no cross-tenant organization picker (see
+    user_admin_service.create_user's docstring), so an admin superuser
+    scoped to `organization` creating a user/role with no organization in
+    the payload must land in that same organization, not orgless."""
+    user_factory(organization=organization, email="root@example.com", password="s3cret-pass!", is_superuser=True, is_staff=True)
+    _login(api_client, "root@example.com", "s3cret-pass!")
+
+    user_resp = api_client.post(
+        "/api/v1/admin/users", {"email": "defaulted@example.com", "first_name": "D", "last_name": "F"}, format="json"
+    )
+    assert user_resp.status_code == 201
+    created_user = User.all_tenants.get(public_id=user_resp.json()["data"]["public_id"])
+    assert created_user.organization_id == organization.id
+
+    role_resp = api_client.post("/api/v1/admin/roles", {"name": "ROLE_DEFAULT_ORG", "label": "Default Org"}, format="json")
+    assert role_resp.status_code == 201
+    created_role = Role.objects.get(public_id=role_resp.json()["data"]["public_id"])
+    assert created_role.organization_id == organization.id
+
+
+@pytest.mark.django_db
 def test_superuser_user_create_with_explicit_password(api_client, organization, user_factory):
     user_factory(organization=organization, email="root@example.com", password="s3cret-pass!", is_superuser=True, is_staff=True)
     _login(api_client, "root@example.com", "s3cret-pass!")

@@ -28,18 +28,30 @@ def _sync_roles(*, user: User, roles: list[Role], actor: User) -> None:
             UserRole.objects.create(user=user, role=role, granted_by=actor)
 
 
-def create_user(*, actor, roles: list[Role] | None = None, password: str | None = None, **fields) -> User:
+def create_user(
+    *, actor, roles: list[Role] | None = None, password: str | None = None, organization=None, **fields
+) -> User:
     """Returns the created user; when no password was supplied, the
     one-time plaintext is stashed on `_generated_password` (never
     persisted) for the serializer to surface exactly once, same as
     apps.students.services.student_service.provision_login.
+
+    An omitted `organization` defaults to the acting superuser's own —
+    the frontend has no cross-tenant organization picker (this codebase
+    never exposes raw organization PKs, only public_ids, and no endpoint
+    hands those out), so leaving it unset here would otherwise silently
+    create an orgless, platform-level account instead of one scoped to
+    whichever school the superuser is actually administering.
     """
+    if organization is None:
+        organization = actor.organization
+
     generated_password = None
     if not password:
         generated_password = _generate_password()
         password = generated_password
 
-    user = User.objects.create_user(password=password, **fields)
+    user = User.objects.create_user(organization=organization, password=password, **fields)
     if roles:
         _sync_roles(user=user, roles=roles, actor=actor)
     if generated_password:

@@ -13,11 +13,15 @@ class RoleIsSystemError(Exception):
     the CUSTOM_ROLE composition this API exists for (§8 ARCHITECTURE.md)."""
 
 
-def create_role(*, actor, permissions: list[Permission] | None = None, **fields) -> Role:
+def create_role(*, actor, permissions: list[Permission] | None = None, organization=None, **fields) -> Role:
     # Every role created through this API is a custom role by definition —
     # Role.is_system defaults to True (the shape seeded system roles use),
     # so it must be forced off here rather than left to that model default.
-    role = Role.objects.create(is_system=False, **fields)
+    # An omitted `organization` defaults to the acting superuser's own,
+    # same reasoning as user_admin_service.create_user.
+    if organization is None:
+        organization = actor.organization
+    role = Role.objects.create(is_system=False, organization=organization, **fields)
     if permissions:
         role.permissions.set(permissions)
     return role
