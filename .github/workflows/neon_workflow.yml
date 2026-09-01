@@ -1,4 +1,46 @@
-name: Create/Delete Branch for Pull Request
+# Per-PR preview: a throwaway Neon branch + a throwaway Railway environment,
+# both created on PR open and destroyed on PR close.
+#
+# Why this exists: Railway's own "PR Environments" dashboard toggle used to
+# handle the Railway side of this automatically, but it duplicates the
+# *production* environment's variables verbatim — including DATABASE_URL and
+# MIGRATE_DATABASE_URL, which point at the real production Neon database.
+# That meant every PR's preview deploy ran `manage.py migrate --noinput`
+# (railway.toml's startCommand) against production before the PR was even
+# reviewed. Confirmed in practice: PR #27's migration was applied to
+# production ~3 hours before it was merged, because its Railway preview
+# booted with production's own DB credentials.
+#
+# This workflow replaces that toggle entirely (turn "PR Environments" off in
+# Railway's Project Settings — leaving both enabled would create two
+# environments per PR) and drives the whole lifecycle itself: create the
+# Neon branch, create a Railway environment copied from production, point
+# that environment's DATABASE_URL/MIGRATE_DATABASE_URL at the new Neon
+# branch instead of production's, then deploy. On PR close, delete both.
+#
+# One bounded residual risk: `railway environment new --copy` may kick off
+# an initial build using the copied (production) variables *before* our
+# next step overrides them, seconds later. Even in that case the only
+# consequence is one extra `migrate --noinput` against production using
+# whatever the PR's migrations are — Django's migration runner is
+# idempotent (see railway.toml's own comment on this) and the repo's start
+# command only ever runs `migrate`, never anything destructive, so this
+# cannot corrupt data. It's a much smaller and now-bounded version of the
+# original problem, not full elimination — worth validating with a real PR
+# once this is wired up, and worth tightening further if Railway's CLI ever
+# exposes a way to create an environment without an immediate deploy.
+#
+# Required one-time setup (can't be done from a workflow file):
+#   1. Railway dashboard -> this project -> Settings -> Environments ->
+#      turn OFF "PR Environments".
+#   2. Generate an *account-scoped* Railway API token (Account Settings ->
+#      Tokens — must be account-scoped, not a project token, because
+#      `railway environment new`/`delete` need account-level access) and
+#      add it as the repo secret RAILWAY_API_TOKEN.
+# Existing secrets/vars this already relies on (unchanged): vars.NEON_PROJECT_ID,
+# secrets.NEON_API_KEY.
+
+name: PR preview environment (Neon branch + Railway environment)
 
 on:
   pull_request:
@@ -11,11 +53,22 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
+env:
+  RAILWAY_PROJECT_ID: b3f66c91-9680-4aea-b4f2-635db1896c33
+  RAILWAY_SERVICE: folad_lms_python
+  RAILWAY_SOURCE_ENV: production
+  # The app's least-privilege runtime role vs. the table-owning role used
+  # only for `migrate` — see RAILWAY_DEPLOYMENT.md §1 and railway.toml.
+  NEON_APP_ROLE: sms_app
+  NEON_MIGRATE_ROLE: neondb_owner
+
 jobs:
   setup:
     name: Setup
     outputs:
       branch: ${{ steps.branch_name.outputs.current_branch }}
+      pr_env_name: pr-${{ github.event.number }}
+      neon_branch_name: preview/pr-${{ github.event.number }}-${{ steps.branch_name.outputs.current_branch }}
     runs-on: ubuntu-latest
     steps:
       - name: Get branch name
@@ -24,74 +77,126 @@ jobs:
 
   create_neon_branch:
     name: Create Neon Branch
-    outputs:
-      db_url: ${{ steps.create_neon_branch_encode.outputs.db_url }}
-      db_url_with_pooler: ${{ steps.create_neon_branch_encode.outputs.db_url_with_pooler }}
     needs: setup
     if: |
-      github.event_name == 'pull_request' && (
       github.event.action == 'synchronize'
       || github.event.action == 'opened'
-      || github.event.action == 'reopened')
+      || github.event.action == 'reopened'
     runs-on: ubuntu-latest
+    outputs:
+      # Pooled, for the app's own runtime connection (railway.toml's
+      # DATABASE_URL) — direct, table-owning-role for the migrate-only
+      # override (MIGRATE_DATABASE_URL). Same role split as production.
+      app_db_url: ${{ steps.app_role.outputs.db_url_pooled }}
+      migrate_db_url: ${{ steps.migrate_role.outputs.db_url }}
     steps:
       - name: Get branch expiration date as an env variable (2 weeks from now)
         id: get_expiration_date
         run: echo "EXPIRES_AT=$(date -u --date '+14 days' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
-      - name: Create Neon Branch
-        id: create_neon_branch
+
+      # This step actually creates the branch. The second step below is a
+      # repeat call against the *same* branch_name purely to resolve a
+      # different role's connection string — create-branch-action is
+      # idempotent by branch name (its `created` output distinguishes
+      # "just created" from "already existed"), so this is safe to call
+      # twice, and safe to re-run on every `synchronize` push too.
+      - name: Create branch + get migrate (owner-role) connection string
+        id: migrate_role
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch_name: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
+          branch_name: ${{ needs.setup.outputs.neon_branch_name }}
+          role: ${{ env.NEON_MIGRATE_ROLE }}
           api_key: ${{ secrets.NEON_API_KEY }}
           expires_at: ${{ env.EXPIRES_AT }}
 
-# The step above creates a new Neon branch.
-# You may want to do something with the new branch, such as run migrations, run tests
-# on it, or send the connection details to a hosting platform environment.
-# The branch DATABASE_URL is available to you via:
-# "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}".
-# It's important you don't log the DATABASE_URL as output as it contains a username and
-# password for your database.
-# For example, you can uncomment the lines below to run a database migration command:
-#      - name: Run Migrations
-#        run: npm run db:migrate
-#        env:
-#          # to use pooled connection
-#          DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
-#          # OR to use unpooled connection
-#          # DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url }}"
+      - name: Get app-role (pooled) connection string for the same branch
+        id: app_role
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: ${{ needs.setup.outputs.neon_branch_name }}
+          role: ${{ env.NEON_APP_ROLE }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          expires_at: ${{ env.EXPIRES_AT }}
 
-# Following the step above, which runs database migrations, you may want to check
-# for schema changes in your database. We recommend using the following action to
-# post a comment to your pull request with the schema diff. For this action to work,
-# you also need to give permissions to the workflow job to be able to post comments
-# and read your repository contents. Add the following permissions to the workflow job:
-#
-# permissions:
-#   contents: read
-#   pull-requests: write
-#
-# You can also check out https://github.com/neondatabase/schema-diff-action for more
-# information on how to use the schema diff action.
-# You can uncomment the lines below to enable the schema diff action.
-#      - name: Post Schema Diff Comment to PR
-#        uses: neondatabase/schema-diff-action@v1
-#        with:
-#          project_id: ${{ vars.NEON_PROJECT_ID }}
-#          compare_branch: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
-#          api_key: ${{ secrets.NEON_API_KEY }}
+  deploy_preview:
+    name: Create/update Railway PR environment
+    needs: [setup, create_neon_branch]
+    if: |
+      github.event.action == 'synchronize'
+      || github.event.action == 'opened'
+      || github.event.action == 'reopened'
+    # Plain ubuntu-latest, not the railwayapp/cli container image: this job
+    # also needs actions/checkout (git + Node), which that minimal image
+    # doesn't provide. The CLI is installed as an explicit step instead —
+    # see the container-based jobs below for the (simpler) case where every
+    # step is a plain `railway ...` shell command and the image is enough.
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      PR_ENV: ${{ needs.setup.outputs.pr_env_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL railway.com/install.sh | sh
+
+      - name: Link to the project (via the production environment, as a base to duplicate from)
+        run: railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_SOURCE_ENV"
+
+      # `|| true`: on `synchronize` (a new push to an already-open PR) this
+      # environment already exists from the `opened` event — `new` isn't
+      # idempotent itself, so a repeat call errors, which this swallows.
+      - name: Create the PR environment (copied from production; no-op if it already exists)
+        run: railway environment new "$PR_ENV" --copy "$RAILWAY_SOURCE_ENV" || true
+
+      - name: Point this PR's environment at the PR's own Neon branch, not production's
+        run: |
+          railway variable set \
+            "DATABASE_URL=${{ needs.create_neon_branch.outputs.app_db_url }}" \
+            "MIGRATE_DATABASE_URL=${{ needs.create_neon_branch.outputs.migrate_db_url }}" \
+            --service "$RAILWAY_SERVICE" --environment "$PR_ENV" --skip-deploys
+
+      - name: Track this PR's branch (so future native rebuilds target the right commit)
+        run: railway environment edit --environment "$PR_ENV" --service-config "$RAILWAY_SERVICE" source.branch "${{ needs.setup.outputs.branch }}"
+
+      # Deploy explicitly from the checked-out PR commit rather than
+      # `railway redeploy` (which needs a prior deployment to redeploy —
+      # not guaranteed to exist yet on a freshly created environment) or
+      # relying on Railway's own webhook to notice the branch/vars change.
+      - name: Deploy this commit to the PR environment
+        run: railway up --service "$RAILWAY_SERVICE" --environment "$PR_ENV" --detach
+
+  delete_railway_environment:
+    name: Delete Railway PR environment
+    needs: setup
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    # Every step here is a plain `railway ...` shell command, so the CLI's
+    # own image is enough — no checkout, no other marketplace actions, so
+    # (unlike deploy_preview above) this one doesn't need git or Node.
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+    steps:
+      - name: Link to the project
+        run: railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_SOURCE_ENV"
+
+      # `|| true`: nothing to clean up if this PR's environment was never
+      # created (e.g. closed without a push after opening).
+      - name: Delete Railway PR environment
+        run: railway environment delete "${{ needs.setup.outputs.pr_env_name }}" --yes || true
 
   delete_neon_branch:
     name: Delete Neon Branch
     needs: setup
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: Delete Neon Branch
         uses: neondatabase/delete-branch-action@v3
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
+          branch: ${{ needs.setup.outputs.neon_branch_name }}
           api_key: ${{ secrets.NEON_API_KEY }}
