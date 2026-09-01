@@ -1,7 +1,7 @@
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models
 
-from apps.core.models import BaseModel, TimestampedModel
+from apps.core.models import BaseModel, TimestampedModel, UUIDPublicIdModel
 from apps.tenancy.managers import TenantManager
 
 from .managers import UserManager
@@ -84,10 +84,13 @@ class Permission(models.Model):
         return self.code
 
 
-class Role(models.Model):
+class Role(UUIDPublicIdModel):
     """A named bundle of permissions. `is_system` roles ship with the
     platform; non-system roles are the CUSTOM_ROLE composition a school
-    can build for itself (§8 ARCHITECTURE.md)."""
+    can build for itself (§8 ARCHITECTURE.md). Carries `public_id` (unlike
+    Permission/RolePermission/UserRole) because it's the one RBAC entity
+    addressed directly by the Users & Roles admin API — the only external
+    identifier this codebase ever exposes (see core/models.py)."""
 
     name = models.CharField(max_length=100, unique=True)
     label = models.CharField(max_length=150)
