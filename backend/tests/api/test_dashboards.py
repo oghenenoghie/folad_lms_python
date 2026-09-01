@@ -63,6 +63,45 @@ def test_teacher_dashboard_summary(
 
 
 @pytest.mark.django_db
+def test_teacher_dashboard_summary_includes_todays_schedule_and_pending_submissions(
+    api_client, organization, user_factory, school_factory, campus_factory, class_level_factory,
+    class_arm_factory, subject_factory, staff_factory, teacher_factory, class_subject_factory,
+    academic_year_factory, term_factory, student_factory, enrollment_factory, assignment_factory,
+    assignment_submission_factory, period_factory, timetable_slot_factory,
+):
+    from django.utils import timezone
+
+    school = school_factory(organization=organization)
+    class_arm = class_arm_factory(class_level=class_level_factory(campus=campus_factory(school=school)))
+    subject = subject_factory(school=school)
+    teacher_user = user_factory(organization=organization, email="t2@example.com", password="s3cret-pass!")
+    staff = staff_factory(school=school, user=teacher_user, employee_number="EMP-002")
+    teacher = teacher_factory(staff=staff)
+    class_subject = class_subject_factory(class_arm=class_arm, subject=subject, teacher=teacher)
+    academic_year = academic_year_factory(school=school)
+    term = term_factory(academic_year=academic_year)
+    student = student_factory(school=school, admission_number="A100", first_name="Pending", last_name="Grader")
+    enrollment_factory(student=student, class_arm=class_arm, academic_year=academic_year)
+    assignment = assignment_factory(class_subject=class_subject, term=term, title="Essay 1")
+    assignment_submission_factory(assignment=assignment, student=student, status="submitted")
+
+    today_weekday = timezone.now().strftime("%A").lower()
+    period = period_factory(school=school, name="Period 1")
+    timetable_slot_factory(class_subject=class_subject, period=period, day_of_week=today_weekday)
+
+    _login(api_client, "t2@example.com", "s3cret-pass!")
+    resp = api_client.get("/api/v1/dashboard/summary")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["todays_periods_count"] == 1
+    assert data["todays_periods"][0]["subject"] == subject.name
+    assert data["todays_periods"][0]["period"] == "Period 1"
+    assert len(data["pending_submissions"]) == 1
+    assert data["pending_submissions"][0]["assignment"] == "Essay 1"
+    assert data["pending_submissions"][0]["student"] == "Pending Grader"
+
+
+@pytest.mark.django_db
 def test_guardian_dashboard_summary(
     api_client, organization, user_factory, school_factory, student_factory, guardian_factory,
     guardian_student_factory,
