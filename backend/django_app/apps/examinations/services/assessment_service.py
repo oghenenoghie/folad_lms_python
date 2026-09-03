@@ -7,6 +7,12 @@ from apps.schools.models import Term
 
 
 def create_assessment(*, class_subject: ClassSubject, term: Term, actor, **fields) -> Assessment:
+    # A model-level default can't see assessment_type, so an "exam"
+    # assessment created without an explicit score_category (every caller
+    # today, since the UI predates that field) would otherwise land in
+    # apps.report_cards' "ca" bucket instead of "exam" — this is the one
+    # place every creation path (API, admin, shell) funnels through.
+    fields.setdefault("score_category", "exam" if fields.get("assessment_type") == "exam" else "ca")
     return Assessment.objects.create(
         organization=class_subject.organization,
         class_subject=class_subject,

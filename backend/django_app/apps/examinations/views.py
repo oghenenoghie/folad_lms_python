@@ -6,8 +6,6 @@ a head of department reviews, an admin verifies and publishes), mirroring
 the AcademicYearActivateView/TermActivateView pattern in apps.schools.
 Invigilator has no client-facing update: reassigning is unassign-then-
 assign (see invigilator_service), so its detail view only supports DELETE.
-ReportCard has no client-facing update/delete at all — its status/file_url
-are written only by the generate_report_card_pdf Celery task.
 """
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -19,7 +17,6 @@ from apps.core.generics import (
     EnvelopeRetrieveMixin,
     TenantListAPIView,
     TenantListCreateAPIView,
-    TenantRetrieveAPIView,
     TenantRetrieveUpdateDestroyAPIView,
 )
 from apps.core.responses import envelope, error_envelope
@@ -34,7 +31,6 @@ from .models import (
     Invigilator,
     Question,
     QuestionOption,
-    ReportCard,
     Result,
     ResultWorkflowState,
     StudentAnswer,
@@ -48,7 +44,6 @@ from .serializers import (
     InvigilatorSerializer,
     QuestionOptionSerializer,
     QuestionSerializer,
-    ReportCardSerializer,
     ResultSerializer,
     ResultWorkflowStateSerializer,
     StudentAnswerSerializer,
@@ -62,7 +57,6 @@ from .services import (
     invigilator_service,
     question_option_service,
     question_service,
-    report_card_service,
     result_service,
     student_answer_service,
 )
@@ -654,39 +648,3 @@ class ResultWorkflowStateListView(TenantListAPIView):
 
     def get_permissions(self):
         return [IsAuthenticated(), require_permission("results.view")()]
-
-
-class ReportCardListCreateView(TenantListCreateAPIView):
-    serializer_class = ReportCardSerializer
-
-    def get_queryset(self):
-        qs = ReportCard.objects.filter(deleted_at__isnull=True)
-        student_id = self.request.query_params.get("student_id")
-        term_id = self.request.query_params.get("term_id")
-        if student_id:
-            qs = qs.filter(student__public_id=student_id)
-        if term_id:
-            qs = qs.filter(term__public_id=term_id)
-        return qs
-
-    def get_permissions(self):
-        code = "report_cards.create" if self.request.method == "POST" else "report_cards.view"
-        return [IsAuthenticated(), require_permission(code)()]
-
-    def perform_create(self, serializer):
-        data = dict(serializer.validated_data)
-        student = data.pop("student")
-        term = data.pop("term")
-        serializer.instance = report_card_service.request_report_card(
-            student=student, academic_year=term.academic_year, term=term, actor=self.request.user
-        )
-
-
-class ReportCardDetailView(TenantRetrieveAPIView):
-    serializer_class = ReportCardSerializer
-
-    def get_queryset(self):
-        return ReportCard.objects.filter(deleted_at__isnull=True)
-
-    def get_permissions(self):
-        return [IsAuthenticated(), require_permission("report_cards.view")()]
