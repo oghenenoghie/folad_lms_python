@@ -15,6 +15,10 @@ Two storage shapes for two different needs:
   presigned URL can be computed at each future request rather than
   persisting one that will eventually expire. Used by apps.documents and
   apps.assignments for user-uploaded files.
+
+`get_file_bytes()` is the odd one out — reads actual content back for a
+key rather than a URL, for callers that need to hand a library real
+bytes (e.g. embedding an image in a server-rendered PDF).
 """
 import uuid
 
@@ -91,6 +95,29 @@ def get_presigned_download_url(key: str) -> str:
     if settings.STORAGE_BACKEND == "s3":
         return _presigned_s3_url(key)
     return default_storage.url(key)
+
+
+def get_file_bytes(key: str) -> bytes | None:
+    """Reads raw bytes back for a key saved via save_document() — the one
+    thing neither save_file()/save_document() (return a URL or key, never
+    content) nor get_presigned_download_url() (also a URL) can do.
+    Needed wherever the caller has to hand a library actual bytes rather
+    than a URL, e.g. embedding a student's photo in a ReportLab-rendered
+    PDF via apps.report_cards.services.report_card_pdf_service.
+
+    Returns None rather than raising for any read failure (missing key,
+    unreachable backend, ...) — callers that only want to embed
+    something-if-present shouldn't have their whole render fail over one
+    unreadable file.
+    """
+    try:
+        if settings.STORAGE_BACKEND == "s3":
+            response = _s3_client().get_object(Bucket=settings.STORAGE_BUCKET_NAME, Key=key)
+            return response["Body"].read()
+        with default_storage.open(key, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
 
 
 def _s3_client():
