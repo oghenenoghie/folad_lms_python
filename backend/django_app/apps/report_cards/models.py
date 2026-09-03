@@ -163,3 +163,54 @@ class ReportCardSubject(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.report_card} - {self.subject}"
+
+
+BULK_EXPORT_STATUS_CHOICES = [
+    ("pending", "Pending"),
+    ("processing", "Processing"),
+    ("ready", "Ready"),
+    ("failed", "Failed"),
+]
+
+
+class ReportCardBulkExport(BaseModel):
+    """One "generate every report card for a term (optionally one class
+    arm) and hand back a ZIP of every PDF" job — see services/report_card_
+    bulk_export_service.py. Deliberately its own job-tracking row rather
+    than reusing ReportCard.pdf_status: a bulk export covers many report
+    cards at once and produces one combined file, not a per-row status.
+    `created_by` (from BaseModel) doubles as "requested by".
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    term = models.ForeignKey(
+        "schools.Term", on_delete=models.PROTECT, related_name="report_card_bulk_exports"
+    )
+    # Null means "every student enrolled this academic year" — the same
+    # "no scope = whole year" convention generate_report_cards_bulk's own
+    # `students=None` already uses.
+    class_arm = models.ForeignKey(
+        "academics.ClassArm",
+        on_delete=models.PROTECT,
+        related_name="report_card_bulk_exports",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(max_length=20, choices=BULK_EXPORT_STATUS_CHOICES, default="pending")
+    report_card_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    file_url = models.CharField(max_length=500, blank=True, default="")
+    error_message = models.CharField(max_length=255, blank=True, default="")
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "report_cards_bulk_export"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        scope = self.class_arm if self.class_arm_id else "whole year"
+        return f"Bulk export - {self.term} - {scope} ({self.status})"

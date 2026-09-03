@@ -1,6 +1,10 @@
 from django.urls import path
 
 from .views import (
+    ReportCardBulkExportDetailView,
+    ReportCardBulkExportDownloadView,
+    ReportCardBulkExportListView,
+    ReportCardBulkExportRequestView,
     ReportCardDetailView,
     ReportCardGenerateBulkView,
     ReportCardGenerateView,
@@ -36,6 +40,26 @@ urlpatterns = [
         "report-cards/verify/<str:verification_code>",
         ReportCardVerifyView.as_view(),
         name="report-card-verify",
+    ),
+    path(
+        "report-cards/bulk-exports",
+        ReportCardBulkExportListView.as_view(),
+        name="report-card-bulk-export-list",
+    ),
+    path(
+        "report-cards/bulk-exports/request",
+        ReportCardBulkExportRequestView.as_view(),
+        name="report-card-bulk-export-request",
+    ),
+    path(
+        "report-cards/bulk-exports/<uuid:public_id>",
+        ReportCardBulkExportDetailView.as_view(),
+        name="report-card-bulk-export-detail",
+    ),
+    path(
+        "report-cards/bulk-exports/<uuid:public_id>/download",
+        ReportCardBulkExportDownloadView.as_view(),
+        name="report-card-bulk-export-download",
     ),
     path("report-cards/<uuid:public_id>", ReportCardDetailView.as_view(), name="report-card-detail"),
     path(

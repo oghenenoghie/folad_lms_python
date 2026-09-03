@@ -3,7 +3,7 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import TenantAdminMixin
 
-from .models import ReportCard, ReportCardSubject, ReportCardWeighting
+from .models import ReportCard, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
 
 
 class ReportCardSubjectInline(admin.TabularInline):
@@ -42,3 +42,18 @@ class ReportCardAdmin(TenantAdminMixin, ModelAdmin):
 class ReportCardWeightingAdmin(TenantAdminMixin, ModelAdmin):
     list_display = ["school", "ca_weight", "cbt_weight", "exam_weight"]
     autocomplete_fields = ["organization", "school"]
+
+
+@admin.register(ReportCardBulkExport)
+class ReportCardBulkExportAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["term", "class_arm", "status", "report_card_count", "failed_count", "created_by"]
+    list_filter = ["status", "term"]
+    autocomplete_fields = ["organization", "term", "class_arm", "created_by"]
+    readonly_fields = [
+        "status", "report_card_count", "failed_count", "file_url", "error_message",
+        "started_at", "completed_at",
+    ]
+
+    # Only ever produced by report_card_bulk_export_service.request_bulk_export.
+    def has_add_permission(self, request):
+        return False
