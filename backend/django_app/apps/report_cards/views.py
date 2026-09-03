@@ -19,15 +19,17 @@ from apps.core.generics import (
 )
 from apps.core.responses import envelope, error_envelope
 
-from .models import ReportCard, ReportCardWeighting
+from .models import ReportCard, ReportCardBulkExport, ReportCardWeighting
 from .serializers import (
+    ReportCardBulkExportRequestSerializer,
+    ReportCardBulkExportSerializer,
     ReportCardGenerateBulkSerializer,
     ReportCardGenerateSerializer,
     ReportCardSerializer,
     ReportCardVerifySerializer,
     ReportCardWeightingSerializer,
 )
-from .services import report_card_service
+from .services import report_card_bulk_export_service, report_card_service
 from .services.report_card_service import InvalidReportCardTransition, ReportCardError
 
 
@@ -143,6 +145,63 @@ class ReportCardGenerateBulkView(APIView):
             actor=request.user,
         )
         return envelope(result, message="bulk generation complete")
+
+
+class ReportCardBulkExportListView(TenantListAPIView):
+    """Every past/in-flight bulk-export job, newest first — see
+    services/report_card_bulk_export_service.py. Distinct from generate-
+    bulk above: that endpoint synchronously creates/refreshes ReportCard
+    rows for a class-sized batch; this tracks the async "render every
+    resulting PDF into one ZIP" job for a whole term/class arm."""
+
+    serializer_class = ReportCardBulkExportSerializer
+
+    def get_queryset(self):
+        qs = ReportCardBulkExport.objects.filter(deleted_at__isnull=True)
+        term_id = self.request.query_params.get("term_id")
+        if term_id:
+            qs = qs.filter(term__public_id=term_id)
+        return qs
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.view")()]
+
+
+class ReportCardBulkExportRequestView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.generate")()]
+
+    def post(self, request):
+        serializer = ReportCardBulkExportRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        export = report_card_bulk_export_service.request_bulk_export(
+            term=serializer.validated_data["term"],
+            class_arm=serializer.validated_data.get("class_arm"),
+            actor=request.user,
+        )
+        return envelope(ReportCardBulkExportSerializer(export).data, message="bulk export started")
+
+
+class ReportCardBulkExportDetailView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.view")()]
+
+    def get(self, request, public_id):
+        export = generics.get_object_or_404(ReportCardBulkExport.objects, public_id=public_id)
+        return envelope(ReportCardBulkExportSerializer(export).data)
+
+
+class ReportCardBulkExportDownloadView(APIView):
+    """Same "stable link, no re-presigning" convention as ReportCardPdfView."""
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.view")()]
+
+    def get(self, request, public_id):
+        export = generics.get_object_or_404(ReportCardBulkExport.objects, public_id=public_id)
+        if export.status != "ready" or not export.file_url:
+            return error_envelope(f"Export not ready (status: {export.status})", status=409)
+        return HttpResponseRedirect(export.file_url)
 
 
 class ReportCardRegenerateView(APIView):

@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.core.storage import save_file
 from apps.tenancy.context import activate_organization
 
-from ..models import ReportCard
+from ..models import ReportCard, ReportCardBulkExport
 from ..services.report_card_pdf_service import render_report_card_pdf
 
 
@@ -48,3 +48,20 @@ def generate_report_card_pdf(report_card_id: int, organization_id: int) -> None:
     report_card.save(
         update_fields=["pdf_status", "pdf_file_url", "pdf_generated_at", "pdf_error_message", "updated_at"]
     )
+
+
+@shared_task
+def generate_report_cards_bulk_zip(export_id: int, organization_id: int) -> None:
+    activate_organization(organization_id)
+    try:
+        export = ReportCardBulkExport.objects.get(id=export_id)
+    except ReportCardBulkExport.DoesNotExist:
+        return
+
+    # Local import: report_card_bulk_export_service needs report_card_
+    # service (imported at module scope there) which itself imports this
+    # module at module scope — importing run_bulk_export at module scope
+    # here would complete that cycle.
+    from ..services.report_card_bulk_export_service import run_bulk_export
+
+    run_bulk_export(export=export)

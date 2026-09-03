@@ -1,11 +1,11 @@
 from rest_framework import serializers
 
-from apps.academics.models import Subject
+from apps.academics.models import ClassArm, Subject
 from apps.core.serializers import PublicIdRelatedField
 from apps.schools.models import School, Term
 from apps.students.models import Student
 
-from .models import ReportCard, ReportCardSubject, ReportCardWeighting
+from .models import ReportCard, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
 
 
 class ReportCardWeightingSerializer(serializers.ModelSerializer):
@@ -103,6 +103,35 @@ class ReportCardGenerateSerializer(serializers.Serializer):
 class ReportCardGenerateBulkSerializer(serializers.Serializer):
     term = PublicIdRelatedField(queryset=Term.objects)
     student = PublicIdRelatedField(queryset=Student.objects, many=True, required=False)
+
+
+class ReportCardBulkExportSerializer(serializers.ModelSerializer):
+    term = PublicIdRelatedField(read_only=True)
+    class_arm = PublicIdRelatedField(read_only=True)
+
+    class Meta:
+        model = ReportCardBulkExport
+        fields = [
+            "public_id",
+            "term",
+            "class_arm",
+            "status",
+            "report_card_count",
+            "failed_count",
+            "file_url",
+            "error_message",
+            "started_at",
+            "completed_at",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class ReportCardBulkExportRequestSerializer(serializers.Serializer):
+    term = PublicIdRelatedField(queryset=Term.objects)
+    # Omitted means "every student enrolled this academic year" — see
+    # ReportCardBulkExport.class_arm's docstring.
+    class_arm = PublicIdRelatedField(queryset=ClassArm.objects, required=False)
 
 
 class ReportCardVerifySubjectSerializer(serializers.Serializer):

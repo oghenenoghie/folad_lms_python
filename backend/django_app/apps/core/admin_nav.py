@@ -317,6 +317,12 @@ NAVIGATION = [
                 "link": reverse_lazy("admin:report_cards_reportcardweighting_changelist"),
                 "permission": _view_perm("report_cards", "reportcardweighting"),
             },
+            {
+                "title": "Report card bulk exports",
+                "icon": "folder_zip",
+                "link": reverse_lazy("admin:report_cards_reportcardbulkexport_changelist"),
+                "permission": _view_perm("report_cards", "reportcardbulkexport"),
+            },
         ],
     },
     {

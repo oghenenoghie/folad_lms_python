@@ -609,6 +609,25 @@ def report_card_weighting_factory(db):
 
 
 @pytest.fixture
+def report_card_bulk_export_factory(db):
+    from apps.report_cards.models import ReportCardBulkExport
+    from apps.tenancy.context import activate_organization
+
+    def make(*, term, class_arm=None, actor=None, **extra):
+        activate_organization(term.organization_id)
+        return ReportCardBulkExport.objects.create(
+            organization=term.organization,
+            term=term,
+            class_arm=class_arm,
+            created_by=actor,
+            updated_by=actor,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
 def question_factory(db):
     from apps.examinations.models import Question
     from apps.tenancy.context import activate_organization
