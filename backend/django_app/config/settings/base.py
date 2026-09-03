@@ -76,8 +76,8 @@ LOGIN_URL = "web:login"
 from apps.core.admin_nav import NAVIGATION as UNFOLD_SIDEBAR_NAVIGATION  # noqa: E402
 
 UNFOLD = {
-    "SITE_TITLE": "School Management System",
-    "SITE_HEADER": "School Management System",
+    "SITE_TITLE": "FOLAD KIDDIES SCHOOL",
+    "SITE_HEADER": "FOLAD KIDDIES SCHOOL",
     "SITE_SYMBOL": "school",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,

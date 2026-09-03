@@ -1,0 +1,19 @@
+{% load i18n %}
+
+{% comment %}
+Overrides unfold/helpers/unauthenticated_header.html to drop the
+"Return to site" link. Unfold's default points it at AdminSite.site_url
+("/"), which on this backend redirects to apps.web's own server-rendered
+home page — a separate, legacy UI, not "the site" a Django Admin user
+would expect. Admin login/password-reset has no real "back" destination
+here, so the link is dropped rather than pointed at a page that confuses
+more than it helps.
+{% endcomment %}
+
+<div class="absolute flex flex-row items-center justify-end left-0 m-4 right-0 top-0">
+    {% if not theme %}
+        <div class="ml-auto">
+            {% include "unfold/helpers/theme_switch_dropdown.html" %}
+        </div>
+    {% endif %}
+</div>
