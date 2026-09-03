@@ -1,12 +1,12 @@
 {% load i18n %}
 {% comment %}Primary KPI row: first 3 cards use a warm amber accent, the 4th (real
-   Achievements count) uses a strong blue accent — per the requested
+   Achievements count) uses the brand primary accent — per the requested
    design direction. Every value is a real query result (see
    apps.core.dashboard.dashboard_callback's kpi_cards).{% endcomment %}
 <div class="gap-4 grid grid-cols-2 lg:grid-cols-4">
     {% for card in kpi_cards %}
         <div class="flex items-center gap-3 p-4 rounded-xl shadow-xs
-            {% if card.tone == "blue" %}bg-blue-600 text-white
+            {% if card.tone == "blue" %}bg-primary-700 text-white
             {% else %}bg-amber-50 text-base-900 dark:bg-amber-500/10 dark:text-base-100{% endif %}">
             <span class="material-symbols-outlined flex h-10 w-10 items-center justify-center rounded-lg text-xl
                 {% if card.tone == "blue" %}bg-white/15 text-white
