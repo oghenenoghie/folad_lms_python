@@ -5,7 +5,7 @@ from apps.core.serializers import PublicIdRelatedField
 from apps.schools.models import School, Term
 from apps.students.models import Student
 
-from .models import ReportCard, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
+from .models import ReportCard, ReportCardAudit, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
 
 
 class ReportCardWeightingSerializer(serializers.ModelSerializer):
@@ -93,6 +93,18 @@ class ReportCardSerializer(serializers.ModelSerializer):
             "attendance_percentage", "status", "generated_at", "published_at", "pdf_status",
             "pdf_generated_at", "pdf_error_message", "subjects",
         ]
+
+
+class ReportCardAuditSerializer(serializers.ModelSerializer):
+    report_card = PublicIdRelatedField(read_only=True)
+    changed_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportCardAudit
+        fields = ["public_id", "report_card", "action", "previous_status", "new_status", "changed_by", "created_at"]
+
+    def get_changed_by(self, obj: ReportCardAudit) -> str | None:
+        return str(obj.changed_by.public_id) if obj.changed_by_id else None
 
 
 class ReportCardGenerateSerializer(serializers.Serializer):

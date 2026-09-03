@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ReportCardAuditListView,
     ReportCardBulkExportDetailView,
     ReportCardBulkExportDownloadView,
     ReportCardBulkExportListView,
@@ -41,6 +42,7 @@ urlpatterns = [
         ReportCardVerifyView.as_view(),
         name="report-card-verify",
     ),
+    path("report-cards/audit", ReportCardAuditListView.as_view(), name="report-card-audit-list"),
     path(
         "report-cards/bulk-exports",
         ReportCardBulkExportListView.as_view(),

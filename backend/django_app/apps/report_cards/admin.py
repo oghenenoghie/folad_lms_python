@@ -3,7 +3,13 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import TenantAdminMixin
 
-from .models import ReportCard, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
+from .models import (
+    ReportCard,
+    ReportCardAudit,
+    ReportCardBulkExport,
+    ReportCardSubject,
+    ReportCardWeighting,
+)
 
 
 class ReportCardSubjectInline(admin.TabularInline):
@@ -56,4 +62,20 @@ class ReportCardBulkExportAdmin(TenantAdminMixin, ModelAdmin):
 
     # Only ever produced by report_card_bulk_export_service.request_bulk_export.
     def has_add_permission(self, request):
+        return False
+
+
+@admin.register(ReportCardAudit)
+class ReportCardAuditAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["report_card", "action", "previous_status", "new_status", "changed_by", "created_at"]
+    list_filter = ["action", "new_status"]
+    autocomplete_fields = ["organization", "report_card", "changed_by"]
+
+    # Append-only at the DB layer (apps.tenancy.db.make_append_only) — the
+    # trigger would reject a save/delete from here too, but hiding the
+    # actions is a better failure mode than a 500 from Admin's own UI.
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False

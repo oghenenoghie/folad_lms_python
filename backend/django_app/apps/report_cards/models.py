@@ -22,6 +22,7 @@ republishing, rather than silently republishing a changed document.
 Every model denormalizes `organization` directly, same convention as
 every other app.
 """
+from django.conf import settings
 from django.db import models
 
 from apps.core.models import BaseModel
@@ -163,6 +164,49 @@ class ReportCardSubject(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.report_card} - {self.subject}"
+
+
+REPORT_CARD_AUDIT_ACTION_CHOICES = [
+    ("generated", "Generated"),
+    ("regenerated", "Regenerated"),
+    ("published", "Published"),
+    ("unpublished", "Unpublished"),
+    ("archived", "Archived"),
+]
+
+
+class ReportCardAudit(BaseModel):
+    """Append-only "who did what, when" trail for a report card's
+    generate/regenerate/publish/unpublish/archive actions — same pattern
+    as apps.attendance.AttendanceAudit: its migration attaches a Postgres
+    trigger (apps.tenancy.db.make_append_only) that rejects UPDATE/DELETE
+    at the database level, not just by convention. A plain previous/new
+    status pair (that model's whole shape) can't distinguish "generate"
+    from "regenerate" when both leave status at "generated" — hence the
+    explicit `action` field here, on top of the same previous/new status
+    columns.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    report_card = models.ForeignKey(ReportCard, on_delete=models.PROTECT, related_name="audit_entries")
+    action = models.CharField(max_length=20, choices=REPORT_CARD_AUDIT_ACTION_CHOICES)
+    previous_status = models.CharField(
+        max_length=20, choices=REPORT_CARD_STATUS_CHOICES, blank=True, default=""
+    )
+    new_status = models.CharField(max_length=20, choices=REPORT_CARD_STATUS_CHOICES)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "report_cards_report_card_audit"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.report_card} : {self.action} ({self.previous_status or '(new)'} -> {self.new_status})"
 
 
 BULK_EXPORT_STATUS_CHOICES = [

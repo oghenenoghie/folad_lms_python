@@ -19,8 +19,9 @@ from apps.core.generics import (
 )
 from apps.core.responses import envelope, error_envelope
 
-from .models import ReportCard, ReportCardBulkExport, ReportCardWeighting
+from .models import ReportCard, ReportCardAudit, ReportCardBulkExport, ReportCardWeighting
 from .serializers import (
+    ReportCardAuditSerializer,
     ReportCardBulkExportRequestSerializer,
     ReportCardBulkExportSerializer,
     ReportCardGenerateBulkSerializer,
@@ -112,6 +113,26 @@ class ReportCardDetailView(TenantRetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
+class ReportCardAuditListView(TenantListAPIView):
+    """Read-only — see the module docstring on ReportCardAudit: it's
+    written only by report_card_service alongside a generate/publish/
+    unpublish/archive call, and the database trigger from apps.tenancy.
+    db.make_append_only rejects any attempt to mutate it directly
+    regardless."""
+
+    serializer_class = ReportCardAuditSerializer
+
+    def get_queryset(self):
+        qs = ReportCardAudit.objects.all()
+        report_card_id = self.request.query_params.get("report_card_id")
+        if report_card_id:
+            qs = qs.filter(report_card__public_id=report_card_id)
+        return qs
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.view")()]
 
 
 class ReportCardGenerateView(APIView):
