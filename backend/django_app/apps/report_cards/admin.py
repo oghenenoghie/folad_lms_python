@@ -20,14 +20,16 @@ class ReportCardSubjectInline(admin.TabularInline):
 class ReportCardAdmin(TenantAdminMixin, ModelAdmin):
     list_display = [
         "student", "academic_year", "term", "average_percentage", "class_position", "status",
+        "pdf_status",
     ]
-    list_filter = ["status", "term"]
+    list_filter = ["status", "pdf_status", "term"]
     search_fields = ["student__first_name", "student__last_name", "report_card_number"]
     autocomplete_fields = ["organization", "student", "academic_year", "term", "class_level", "class_arm"]
     readonly_fields = [
         "report_card_number", "verification_code", "total_score", "total_possible_score",
         "average_percentage", "class_position", "class_size", "attendance_present",
         "attendance_absent", "attendance_percentage", "generated_at", "published_at",
+        "pdf_status", "pdf_file_url", "pdf_generated_at", "pdf_error_message",
     ]
     inlines = [ReportCardSubjectInline]
 

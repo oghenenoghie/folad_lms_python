@@ -80,13 +80,17 @@ class ReportCardSerializer(serializers.ModelSerializer):
             "status",
             "generated_at",
             "published_at",
+            "pdf_status",
+            "pdf_generated_at",
+            "pdf_error_message",
             "subjects",
         ]
         read_only_fields = [
             "student", "academic_year", "term", "class_level", "class_arm", "report_card_number",
             "total_score", "total_possible_score", "average_percentage", "class_position", "class_size",
             "attendance_present", "attendance_absent", "attendance_percentage", "status",
-            "generated_at", "published_at", "subjects",
+            "generated_at", "published_at", "pdf_status", "pdf_generated_at", "pdf_error_message",
+            "subjects",
         ]
 
 

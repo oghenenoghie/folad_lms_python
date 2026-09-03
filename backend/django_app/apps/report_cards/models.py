@@ -34,6 +34,18 @@ REPORT_CARD_STATUS_CHOICES = [
     ("archived", "Archived"),
 ]
 
+# The PDF render is a separate async job from the data workflow above (a
+# report card is "generated" data-wise the moment generate_report_card
+# returns; its PDF, rendered by a Celery task, catches up moments later) —
+# same pending/generating/ready/failed shape apps.examinations' old
+# ReportCard and apps.finance.Receipt already use for their own PDF jobs.
+PDF_STATUS_CHOICES = [
+    ("pending", "Pending"),
+    ("generating", "Generating"),
+    ("ready", "Ready"),
+    ("failed", "Failed"),
+]
+
 
 class ReportCardWeighting(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
@@ -96,6 +108,10 @@ class ReportCard(BaseModel):
     status = models.CharField(max_length=20, choices=REPORT_CARD_STATUS_CHOICES, default="draft")
     generated_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
+    pdf_status = models.CharField(max_length=20, choices=PDF_STATUS_CHOICES, default="pending")
+    pdf_file_url = models.CharField(max_length=500, blank=True, default="")
+    pdf_generated_at = models.DateTimeField(null=True, blank=True)
+    pdf_error_message = models.CharField(max_length=255, blank=True, default="")
 
     objects = TenantManager()
     all_tenants = models.Manager()
