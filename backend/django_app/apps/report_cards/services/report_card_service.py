@@ -32,7 +32,7 @@ from apps.examinations.services.result_service import _resolve_grade
 from apps.schools.models import Term
 from apps.students.models import Student
 
-from ..models import ReportCard, ReportCardSubject, ReportCardWeighting
+from ..models import ReportCard, ReportCardAudit, ReportCardSubject, ReportCardWeighting
 from ..tasks.reports import generate_report_card_pdf
 
 SCORE_CATEGORIES = ("ca", "cbt", "exam")
@@ -113,6 +113,21 @@ def _recompute_positions(*, class_arm: ClassArm, term: Term) -> None:
                 row.save(update_fields=["class_position", "updated_at"])
 
 
+def _write_audit(
+    *, report_card: ReportCard, action: str, previous_status: str, new_status: str, actor
+) -> None:
+    ReportCardAudit.objects.create(
+        organization=report_card.organization,
+        report_card=report_card,
+        action=action,
+        previous_status=previous_status,
+        new_status=new_status,
+        changed_by=actor,
+        created_by=actor,
+        updated_by=actor,
+    )
+
+
 def _next_report_card_number(*, organization) -> str:
     year = timezone.now().year
     prefix = f"RC-{year}-"
@@ -151,7 +166,7 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
         subject = result.assessment.class_subject.subject
         by_subject.setdefault(subject.id, []).append(result)
 
-    report_card, _ = ReportCard.objects.get_or_create(
+    report_card, created = ReportCard.objects.get_or_create(
         student=student,
         academic_year=academic_year,
         term=term,
@@ -165,6 +180,7 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
             "updated_by": actor,
         },
     )
+    previous_status = "" if created else report_card.status
 
     total_score = Decimal(0)
     for subject_id, subject_results in by_subject.items():
@@ -224,6 +240,14 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
     _recompute_positions(class_arm=enrollment.class_arm, term=term)
     report_card.refresh_from_db()
 
+    _write_audit(
+        report_card=report_card,
+        action="generated" if created else "regenerated",
+        previous_status=previous_status,
+        new_status="generated",
+        actor=actor,
+    )
+
     # Deferred to on_commit: the whole function above is one atomic block,
     # so a worker picking this up before it commits would find no row yet.
     report_card_id, organization_id = report_card.id, report_card.organization_id
@@ -259,10 +283,15 @@ def publish_report_card(*, report_card: ReportCard, actor) -> ReportCard:
         raise InvalidReportCardTransition(
             f"cannot publish a report card in status '{report_card.status}' (must be 'generated')"
         )
+    previous_status = report_card.status
     report_card.status = "published"
     report_card.published_at = timezone.now()
     report_card.updated_by = actor
     report_card.save(update_fields=["status", "published_at", "updated_by", "updated_at"])
+    _write_audit(
+        report_card=report_card, action="published", previous_status=previous_status,
+        new_status=report_card.status, actor=actor,
+    )
     return report_card
 
 
@@ -271,10 +300,15 @@ def unpublish_report_card(*, report_card: ReportCard, actor) -> ReportCard:
         raise InvalidReportCardTransition(
             f"cannot unpublish a report card in status '{report_card.status}' (must be 'published')"
         )
+    previous_status = report_card.status
     report_card.status = "generated"
     report_card.published_at = None
     report_card.updated_by = actor
     report_card.save(update_fields=["status", "published_at", "updated_by", "updated_at"])
+    _write_audit(
+        report_card=report_card, action="unpublished", previous_status=previous_status,
+        new_status=report_card.status, actor=actor,
+    )
     return report_card
 
 
@@ -316,7 +350,12 @@ def archive_report_card(*, report_card: ReportCard, actor) -> ReportCard:
         raise InvalidReportCardTransition(
             f"cannot archive a report card in status '{report_card.status}'"
         )
+    previous_status = report_card.status
     report_card.status = "archived"
     report_card.updated_by = actor
     report_card.save(update_fields=["status", "updated_by", "updated_at"])
+    _write_audit(
+        report_card=report_card, action="archived", previous_status=previous_status,
+        new_status=report_card.status, actor=actor,
+    )
     return report_card

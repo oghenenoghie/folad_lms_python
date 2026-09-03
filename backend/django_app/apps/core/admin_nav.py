@@ -323,6 +323,12 @@ NAVIGATION = [
                 "link": reverse_lazy("admin:report_cards_reportcardbulkexport_changelist"),
                 "permission": _view_perm("report_cards", "reportcardbulkexport"),
             },
+            {
+                "title": "Report card audit trail",
+                "icon": "fact_check",
+                "link": reverse_lazy("admin:report_cards_reportcardaudit_changelist"),
+                "permission": _view_perm("report_cards", "reportcardaudit"),
+            },
         ],
     },
     {
