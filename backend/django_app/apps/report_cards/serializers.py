@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.academics.models import ClassArm, Subject
+from apps.academics.models import ClassArm
 from apps.core.serializers import PublicIdRelatedField
 from apps.schools.models import School, Term
 from apps.students.models import Student
@@ -25,7 +25,11 @@ class ReportCardWeightingSerializer(serializers.ModelSerializer):
 
 
 class ReportCardSubjectSerializer(serializers.ModelSerializer):
-    subject = PublicIdRelatedField(queryset=Subject.objects)
+    # Nested read-only under ReportCardSerializer (see read_only_fields
+    # below) — a display name, not an editable relation, so this returns
+    # the subject's name directly rather than its public_id. Mirrors
+    # ReportCardVerifySubjectSerializer's identical field.
+    subject = serializers.CharField(source="subject.name", read_only=True)
 
     class Meta:
         model = ReportCardSubject
