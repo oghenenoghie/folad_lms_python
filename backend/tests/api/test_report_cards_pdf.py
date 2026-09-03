@@ -18,32 +18,6 @@ def _login(api_client, email, password):
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
 
-@pytest.fixture
-def report_card_fixture_set(
-    organization, school_factory, campus_factory, class_level_factory, class_arm_factory,
-    subject_factory, staff_factory, teacher_factory, class_subject_factory,
-    academic_year_factory, term_factory, student_factory, enrollment_factory,
-):
-    school = school_factory(organization=organization)
-    class_arm = class_arm_factory(class_level=class_level_factory(campus=campus_factory(school=school)))
-    subject = subject_factory(school=school, name="Mathematics", code="MTH")
-    teacher = teacher_factory(staff=staff_factory(school=school))
-    class_subject = class_subject_factory(class_arm=class_arm, subject=subject, teacher=teacher)
-    academic_year = academic_year_factory(school=school)
-    term = term_factory(academic_year=academic_year)
-    student = student_factory(school=school)
-    enrollment_factory(student=student, class_arm=class_arm, academic_year=academic_year)
-    return {
-        "school": school,
-        "class_arm": class_arm,
-        "subject": subject,
-        "class_subject": class_subject,
-        "academic_year": academic_year,
-        "term": term,
-        "student": student,
-    }
-
-
 @pytest.mark.django_db
 def test_render_report_card_pdf_produces_a_real_pdf(
     organization, report_card_fixture_set, assessment_factory, result_factory,

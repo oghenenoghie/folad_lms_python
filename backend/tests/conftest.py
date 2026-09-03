@@ -558,6 +558,38 @@ def report_card_factory(db):
 
 
 @pytest.fixture
+def report_card_fixture_set(
+    organization, school_factory, campus_factory, class_level_factory, class_arm_factory,
+    subject_factory, staff_factory, teacher_factory, class_subject_factory,
+    academic_year_factory, term_factory, student_factory, enrollment_factory,
+):
+    """One student, one subject, one class/term — the minimal scaffolding
+    every apps.report_cards test (crud/pdf/verify) needs before it can
+    generate a report card. Shared here rather than duplicated per test
+    module since all three exercise the same generate_report_card() path.
+    """
+    school = school_factory(organization=organization)
+    class_arm = class_arm_factory(class_level=class_level_factory(campus=campus_factory(school=school)))
+    subject = subject_factory(school=school, name="Mathematics", code="MTH")
+    teacher = teacher_factory(staff=staff_factory(school=school))
+    class_subject = class_subject_factory(class_arm=class_arm, subject=subject, teacher=teacher)
+    academic_year = academic_year_factory(school=school)
+    term = term_factory(academic_year=academic_year)
+    student = student_factory(school=school)
+    enrollment = enrollment_factory(student=student, class_arm=class_arm, academic_year=academic_year)
+    return {
+        "school": school,
+        "class_arm": class_arm,
+        "subject": subject,
+        "class_subject": class_subject,
+        "academic_year": academic_year,
+        "term": term,
+        "student": student,
+        "enrollment": enrollment,
+    }
+
+
+@pytest.fixture
 def report_card_weighting_factory(db):
     from apps.report_cards.models import ReportCardWeighting
     from apps.tenancy.context import activate_organization

@@ -21,6 +21,7 @@ import secrets
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Prefetch
 from django.utils import timezone
 
 from apps.academics.models import ClassArm, Enrollment
@@ -275,6 +276,39 @@ def unpublish_report_card(*, report_card: ReportCard, actor) -> ReportCard:
     report_card.updated_by = actor
     report_card.save(update_fields=["status", "published_at", "updated_by", "updated_at"])
     return report_card
+
+
+def verify_report_card(*, verification_code: str) -> ReportCard | None:
+    """Public lookup for the verification page/QR code — no authenticated
+    org context exists at this point (same reason apps.accounts.auth_
+    service queries User.all_tenants rather than the tenant-scoped
+    manager), so this bypasses TenantManager/RLS entirely and relies on
+    verification_code's own uniqueness + unguessability instead. Only a
+    report card that was actually issued (published, or later archived)
+    verifies — "generated" (not yet reviewed/published) and "draft" never
+    do, so a not-yet-released report card can't be confirmed early.
+    """
+    return (
+        ReportCard.all_tenants.filter(
+            verification_code=verification_code,
+            status__in=("published", "archived"),
+            deleted_at__isnull=True,
+        )
+        .select_related("student__school", "academic_year", "term", "class_level", "class_arm")
+        # Prefetch.queryset must also use all_tenants: the plain "subjects"
+        # relation goes through ReportCardSubject's default TenantManager,
+        # which would filter to an active org context that doesn't exist
+        # on this unauthenticated request and silently come back empty.
+        .prefetch_related(
+            Prefetch(
+                "subjects",
+                queryset=ReportCardSubject.all_tenants.select_related("subject").order_by(
+                    "subject__name"
+                ),
+            )
+        )
+        .first()
+    )
 
 
 def archive_report_card(*, report_card: ReportCard, actor) -> ReportCard:

@@ -10,6 +10,9 @@ flow and Table/Paragraph flowables are for.
 """
 import io
 
+from django.conf import settings
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -152,6 +155,33 @@ def _overview_table(report_card: ReportCard) -> Table:
     return table
 
 
+def _verification_url(report_card: ReportCard) -> str:
+    return f"{settings.FRONTEND_URL.rstrip('/')}/report/verify/{report_card.verification_code}"
+
+
+def _qr_code(data: str, size: float) -> Drawing:
+    widget = QrCodeWidget(data)
+    x1, y1, x2, y2 = widget.getBounds()
+    drawing = Drawing(size, size, transform=[size / (x2 - x1), 0, 0, size / (y2 - y1), 0, 0])
+    drawing.add(widget)
+    return drawing
+
+
+def _verification_footer(report_card: ReportCard) -> Table:
+    """A QR code next to the codes it encodes — printed so either a scan
+    or a manually-typed verification_code reaches the same public lookup
+    (apps.report_cards.views.ReportCardVerifyView)."""
+    qr = _qr_code(_verification_url(report_card), size=2.4 * cm)
+    text = [
+        Paragraph(f"<b>Report Card No:</b> {report_card.report_card_number}", _BODY),
+        Paragraph(f"<b>Verification Code:</b> {report_card.verification_code}", _BODY),
+        Paragraph("Scan the QR code, or enter the code above, to confirm this report card is genuine.", _BODY),
+    ]
+    table = Table([[qr, text]], colWidths=[3 * cm, None])
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    return table
+
+
 def _signature_block(label: str, comment: str, signer: str) -> list:
     return [
         Paragraph(f"<b>{label}</b>", _BODY),
@@ -201,8 +231,8 @@ def render_report_card_pdf(report_card: ReportCard) -> bytes:
         report_card.next_term_begins.strftime("%d %B %Y") if report_card.next_term_begins else "—"
     )
     story.append(Paragraph(f"<b>Next term begins:</b> {next_term}", _BODY))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"Report Card No: {report_card.report_card_number}", _BODY))
+    story.append(Spacer(1, 8))
+    story.append(_verification_footer(report_card))
 
     doc.build(story)
     return buffer.getvalue()

@@ -66,6 +66,7 @@ class ReportCardSerializer(serializers.ModelSerializer):
             "class_level",
             "class_arm",
             "report_card_number",
+            "verification_code",
             "total_score",
             "total_possible_score",
             "average_percentage",
@@ -87,10 +88,10 @@ class ReportCardSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "student", "academic_year", "term", "class_level", "class_arm", "report_card_number",
-            "total_score", "total_possible_score", "average_percentage", "class_position", "class_size",
-            "attendance_present", "attendance_absent", "attendance_percentage", "status",
-            "generated_at", "published_at", "pdf_status", "pdf_generated_at", "pdf_error_message",
-            "subjects",
+            "verification_code", "total_score", "total_possible_score", "average_percentage",
+            "class_position", "class_size", "attendance_present", "attendance_absent",
+            "attendance_percentage", "status", "generated_at", "published_at", "pdf_status",
+            "pdf_generated_at", "pdf_error_message", "subjects",
         ]
 
 
@@ -102,3 +103,53 @@ class ReportCardGenerateSerializer(serializers.Serializer):
 class ReportCardGenerateBulkSerializer(serializers.Serializer):
     term = PublicIdRelatedField(queryset=Term.objects)
     student = PublicIdRelatedField(queryset=Student.objects, many=True, required=False)
+
+
+class ReportCardVerifySubjectSerializer(serializers.Serializer):
+    """Mirrors the subject columns printed on the PDF (see
+    report_card_pdf_service._subjects_table) so a third party can check
+    a physical/printed report card line-by-line against this response —
+    that's the entire point of a verification lookup. Deliberately
+    excludes teacher_comment: not needed to confirm authenticity, and
+    more personal than the rest of this already-public-on-paper data.
+    """
+
+    subject = serializers.CharField(source="subject.name")
+    ca_score = serializers.DecimalField(max_digits=6, decimal_places=2)
+    cbt_score = serializers.DecimalField(max_digits=6, decimal_places=2)
+    exam_score = serializers.DecimalField(max_digits=6, decimal_places=2)
+    total_score = serializers.DecimalField(max_digits=6, decimal_places=2)
+    percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
+    grade = serializers.CharField()
+    remark = serializers.CharField()
+
+
+class ReportCardVerifySerializer(serializers.Serializer):
+    """The public verification payload — everything a QR-code scan or a
+    manual code lookup returns. No teacher_comment/principal_comment: see
+    ReportCardVerifySubjectSerializer's docstring for why.
+    """
+
+    report_card_number = serializers.CharField()
+    verification_code = serializers.CharField()
+    student_name = serializers.SerializerMethodField()
+    school_name = serializers.CharField(source="student.school.name")
+    class_name = serializers.SerializerMethodField()
+    academic_year = serializers.CharField(source="academic_year.name")
+    term = serializers.CharField(source="term.name")
+    total_score = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_possible_score = serializers.DecimalField(max_digits=10, decimal_places=2)
+    average_percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
+    class_position = serializers.IntegerField()
+    class_size = serializers.IntegerField()
+    attendance_percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
+    status = serializers.CharField()
+    generated_at = serializers.DateTimeField()
+    published_at = serializers.DateTimeField()
+    subjects = ReportCardVerifySubjectSerializer(source="subjects.all", many=True)
+
+    def get_student_name(self, obj) -> str:
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+    def get_class_name(self, obj) -> str:
+        return f"{obj.class_level.name} {obj.class_arm.name}"

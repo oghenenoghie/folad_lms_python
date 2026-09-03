@@ -248,6 +248,11 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 25,
+    # report_card_verify: the only unauthenticated, public-internet-facing
+    # lookup in the API (see apps.report_cards.views.ReportCardVerifyView) —
+    # verification_code itself is unguessable (192 bits), so this rate
+    # limits scraping/abuse rather than defending against brute force.
+    "DEFAULT_THROTTLE_RATES": {"report_card_verify": "30/min"},
 }
 
 # --- JWT access/refresh TTLs + signing key ---
@@ -261,6 +266,9 @@ LOGIN_LOCKOUT_WINDOW = timedelta(minutes=env.int("LOGIN_LOCKOUT_WINDOW_MIN", def
 
 # Roles required to complete MFA at login, by name (accounts.Role.name).
 MFA_REQUIRED_ROLES = env.list("MFA_REQUIRED_ROLES", default=["SUPER_ADMIN", "SCHOOL_ADMIN"])
+
+# --- Public frontend origin (report-card verification QR codes/links point here) ---
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 
 # --- Object storage (S3 / R2 / MinIO), consumed by the StorageBackend protocol ---
 STORAGE_BACKEND = env("STORAGE_BACKEND", default="s3")
