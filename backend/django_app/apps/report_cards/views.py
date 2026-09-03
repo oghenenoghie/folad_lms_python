@@ -5,6 +5,7 @@ generate-bulk and transitioned by publish/unpublish, mirroring how
 apps.examinations.Result's workflow transitions are dedicated APIView
 endpoints rather than a generic PATCH.
 """
+from django.http import HttpResponseRedirect
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -178,3 +179,23 @@ class ReportCardPublishView(_ReportCardTransitionView):
 
 class ReportCardUnpublishView(_ReportCardTransitionView):
     transition = staticmethod(report_card_service.unpublish_report_card)
+
+
+class ReportCardPdfView(APIView):
+    """A stable download link a UI can point straight at (an <a href>,
+    an email link) rather than fetching JSON first to extract a field —
+    redirects to the presigned URL apps.core.storage.save_file already
+    produced, recomputing nothing (that URL is "generate-once-use-soon",
+    per that module's docstring, not meant to be re-presigned per request).
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("report_cards.view")()]
+
+    def get(self, request, public_id):
+        report_card = generics.get_object_or_404(ReportCard.objects, public_id=public_id)
+        if report_card.pdf_status != "ready" or not report_card.pdf_file_url:
+            return error_envelope(
+                f"PDF not ready (status: {report_card.pdf_status})", status=409
+            )
+        return HttpResponseRedirect(report_card.pdf_file_url)

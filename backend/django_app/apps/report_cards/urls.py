@@ -5,6 +5,7 @@ from .views import (
     ReportCardGenerateBulkView,
     ReportCardGenerateView,
     ReportCardListView,
+    ReportCardPdfView,
     ReportCardPublishView,
     ReportCardRegenerateView,
     ReportCardUnpublishView,
@@ -46,4 +47,5 @@ urlpatterns = [
         ReportCardUnpublishView.as_view(),
         name="report-card-unpublish",
     ),
+    path("report-cards/<uuid:public_id>/pdf", ReportCardPdfView.as_view(), name="report-card-pdf"),
 ]

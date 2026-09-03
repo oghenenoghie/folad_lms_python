@@ -32,6 +32,7 @@ from apps.schools.models import Term
 from apps.students.models import Student
 
 from ..models import ReportCard, ReportCardSubject, ReportCardWeighting
+from ..tasks.reports import generate_report_card_pdf
 
 SCORE_CATEGORIES = ("ca", "cbt", "exam")
 
@@ -221,6 +222,12 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
 
     _recompute_positions(class_arm=enrollment.class_arm, term=term)
     report_card.refresh_from_db()
+
+    # Deferred to on_commit: the whole function above is one atomic block,
+    # so a worker picking this up before it commits would find no row yet.
+    report_card_id, organization_id = report_card.id, report_card.organization_id
+    transaction.on_commit(lambda: generate_report_card_pdf.delay(report_card_id, organization_id))
+
     return report_card
 
 
