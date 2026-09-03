@@ -16,7 +16,6 @@ from .models import (
     Invigilator,
     Question,
     QuestionOption,
-    ReportCard,
     Result,
     ResultWorkflowState,
     StudentAnswer,
@@ -84,6 +83,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "exam",
             "name",
             "assessment_type",
+            "score_category",
             "weight",
             "max_score",
         ]
@@ -152,24 +152,3 @@ class ResultWorkflowStateSerializer(serializers.ModelSerializer):
 
     def get_changed_by(self, obj: ResultWorkflowState) -> str | None:
         return str(obj.changed_by.public_id) if obj.changed_by_id else None
-
-
-class ReportCardSerializer(serializers.ModelSerializer):
-    student = PublicIdRelatedField(queryset=Student.objects)
-    # Always derived server-side from `term` (see report_card_service.request_report_card).
-    academic_year = PublicIdRelatedField(read_only=True)
-    term = PublicIdRelatedField(queryset=Term.objects)
-
-    class Meta:
-        model = ReportCard
-        fields = [
-            "public_id",
-            "student",
-            "academic_year",
-            "term",
-            "status",
-            "file_url",
-            "generated_at",
-            "error_message",
-        ]
-        read_only_fields = ["status", "file_url", "generated_at", "error_message"]

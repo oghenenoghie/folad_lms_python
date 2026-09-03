@@ -12,7 +12,6 @@ from .models import (
     Invigilator,
     Question,
     QuestionOption,
-    ReportCard,
     Result,
     ResultWorkflowState,
     StudentAnswer,
@@ -107,17 +106,4 @@ class ResultWorkflowStateAdmin(TenantAdminMixin, ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return False
-
-
-@admin.register(ReportCard)
-class ReportCardAdmin(TenantAdminMixin, ModelAdmin):
-    list_display = ["student", "term", "status", "generated_at"]
-    search_fields = ["student__first_name", "student__last_name"]
-    list_filter = ["status"]
-    autocomplete_fields = ["organization", "student", "academic_year", "term"]
-
-    # Generated only by the Celery task (apps.examinations.tasks.reports) —
-    # Admin can inspect the row but must not hand-edit its generated state.
-    def has_change_permission(self, request, obj=None):
         return False

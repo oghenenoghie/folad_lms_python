@@ -18,6 +18,11 @@ graded manually, and finalize_assessment_score rolls a student's answers
 up into their Result via the existing enter/update result_service
 functions rather than duplicating that logic. Every model denormalizes
 `organization` directly, same convention as every other app.
+
+The bare PDF-job ReportCard that used to live here has been replaced by
+apps.report_cards' richer engine (subject-level CA/CBT/exam breakdown,
+attendance, ranking, comments, draft/generated/published/archived
+workflow) — see that app instead.
 """
 from django.conf import settings
 from django.db import models
@@ -34,19 +39,26 @@ ASSESSMENT_TYPE_CHOICES = [
     ("exam", "Exam"),
 ]
 
+# apps.report_cards' consolidation engine buckets a subject's assessments
+# into these three categories before applying the school's configurable
+# weighting (e.g. CA 20% + CBT 30% + Exam 50%) — see
+# apps.report_cards.services.report_card_service. Independent of
+# assessment_type/exam above (a "test" can be delivered as a CBT, an
+# "exam" can be entirely offline) and independent of whether the
+# assessment actually has a Question bank attached; it's simply which
+# bucket the score counts toward on the report card.
+SCORE_CATEGORY_CHOICES = [
+    ("ca", "Continuous Assessment"),
+    ("cbt", "CBT"),
+    ("exam", "Examination"),
+]
+
 RESULT_STATUS_CHOICES = [
     ("entered", "Entered"),
     ("submitted", "Submitted"),
     ("reviewed", "Reviewed"),
     ("verified", "Verified"),
     ("published", "Published"),
-]
-
-REPORT_CARD_STATUS_CHOICES = [
-    ("pending", "Pending"),
-    ("generating", "Generating"),
-    ("ready", "Ready"),
-    ("failed", "Failed"),
 ]
 
 QUESTION_TYPE_CHOICES = [
@@ -187,6 +199,10 @@ class Assessment(BaseModel):
     )
     name = models.CharField(max_length=150)
     assessment_type = models.CharField(max_length=20, choices=ASSESSMENT_TYPE_CHOICES)
+    # Defaults follow assessment_type (exam -> "exam", else "ca") in the
+    # migration backfill, then is independently editable per assessment —
+    # see SCORE_CATEGORY_CHOICES above.
+    score_category = models.CharField(max_length=10, choices=SCORE_CATEGORY_CHOICES, default="ca")
     weight = models.DecimalField(max_digits=5, decimal_places=2)
     max_score = models.DecimalField(max_digits=5, decimal_places=2)
 
@@ -344,31 +360,3 @@ class StudentAnswer(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.student} -> {self.question}"
-
-
-class ReportCard(BaseModel):
-    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
-    student = models.ForeignKey(
-        "students.Student", on_delete=models.PROTECT, related_name="report_cards"
-    )
-    academic_year = models.ForeignKey(
-        "schools.AcademicYear", on_delete=models.PROTECT, related_name="report_cards"
-    )
-    term = models.ForeignKey("schools.Term", on_delete=models.PROTECT, related_name="report_cards")
-    status = models.CharField(max_length=20, choices=REPORT_CARD_STATUS_CHOICES, default="pending")
-    file_url = models.CharField(max_length=500, blank=True, default="")
-    generated_at = models.DateTimeField(null=True, blank=True)
-    error_message = models.CharField(max_length=255, blank=True, default="")
-
-    objects = TenantManager()
-    all_tenants = models.Manager()
-
-    class Meta:
-        db_table = "examinations_report_card"
-        constraints = [
-            models.UniqueConstraint(fields=["student", "term"], name="uq_report_card_student_term")
-        ]
-        ordering = ["-created_at"]
-
-    def __str__(self) -> str:
-        return f"{self.student} - {self.term}"

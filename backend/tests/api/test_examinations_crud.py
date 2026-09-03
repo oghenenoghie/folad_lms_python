@@ -238,32 +238,6 @@ def test_examinations_app_layer_tenant_isolation(
     assert visible.first().organization_id == organization.id
 
 
-@pytest.mark.django_db
-def test_generate_report_card_pdf_visible_with_no_ambient_org_context(
-    organization, exam_fixture_set, academic_year_factory, term_factory,
-):
-    """A real Celery worker gets a fresh DB connection with no app.current_org
-    GUC set (unlike CELERY_TASK_ALWAYS_EAGER, which reuses the calling
-    request's connection). Simulate that by clearing the org context before
-    invoking the task, the way a genuine worker process would receive it."""
-    from apps.examinations.models import ReportCard
-    from apps.examinations.tasks.reports import generate_report_card_pdf
-
-    term = exam_fixture_set["term"]
-    student = exam_fixture_set["student"]
-    report_card = ReportCard.objects.create(
-        organization=organization, student=student, academic_year=term.academic_year, term=term,
-    )
-
-    activate_organization(None)
-    generate_report_card_pdf(report_card.id, organization.id)
-
-    activate_organization(organization.id)
-    report_card.refresh_from_db()
-    assert report_card.status == "ready"
-    assert report_card.file_url
-
-
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="append-only trigger is Postgres-only")
 @pytest.mark.django_db
 def test_result_workflow_state_is_append_only_at_db_level(
@@ -562,34 +536,3 @@ def test_finalize_assessment_score_rejects_ungraded_subjective_answers(
         format="json",
     )
     assert resp.status_code == 409
-
-
-@pytest.mark.django_db
-def test_report_card_generation_produces_pdf_via_celery(
-    api_client, organization, user_factory, exam_fixture_set, assessment_factory, result_factory,
-):
-    class_subject = exam_fixture_set["class_subject"]
-    term = exam_fixture_set["term"]
-    student = exam_fixture_set["student"]
-    assessment = assessment_factory(class_subject=class_subject, term=term)
-    result_factory(assessment=assessment, student=student, status="published")
-
-    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    _grant(user, "report_cards.create", "report_cards.view")
-    _login(api_client, "a@example.com", "s3cret-pass!")
-
-    created = api_client.post(
-        "/api/v1/report-cards",
-        {"student": str(student.public_id), "term": str(term.public_id)},
-        format="json",
-    )
-    assert created.status_code == 201
-    public_id = created.json()["data"]["public_id"]
-
-    # CELERY_TASK_ALWAYS_EAGER runs the task synchronously inline above, so
-    # generation has already completed by the time the response returns.
-    retrieved = api_client.get(f"/api/v1/report-cards/{public_id}")
-    body = retrieved.json()["data"]
-    assert body["status"] == "ready"
-    assert body["file_url"]
-    assert body["generated_at"] is not None

@@ -535,16 +535,41 @@ def result_factory(db):
 
 @pytest.fixture
 def report_card_factory(db):
-    from apps.examinations.models import ReportCard
+    import secrets
+
+    from apps.report_cards.models import ReportCard
     from apps.tenancy.context import activate_organization
 
-    def make(*, student, term, **extra):
+    def make(*, student, term, class_arm, **extra):
         activate_organization(student.organization_id)
+        extra.setdefault("report_card_number", f"RC-TEST-{secrets.token_hex(4)}")
+        extra.setdefault("verification_code", secrets.token_urlsafe(16))
         return ReportCard.all_tenants.create(
             organization=student.organization,
             student=student,
             academic_year=term.academic_year,
             term=term,
+            class_level=class_arm.class_level,
+            class_arm=class_arm,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def report_card_weighting_factory(db):
+    from apps.report_cards.models import ReportCardWeighting
+    from apps.tenancy.context import activate_organization
+
+    def make(*, school, ca_weight="30.00", cbt_weight="30.00", exam_weight="40.00", **extra):
+        activate_organization(school.organization_id)
+        return ReportCardWeighting.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            ca_weight=ca_weight,
+            cbt_weight=cbt_weight,
+            exam_weight=exam_weight,
             **extra,
         )
 

@@ -308,8 +308,14 @@ NAVIGATION = [
             {
                 "title": "Report cards",
                 "icon": "description",
-                "link": reverse_lazy("admin:examinations_reportcard_changelist"),
-                "permission": _view_perm("examinations", "reportcard"),
+                "link": reverse_lazy("admin:report_cards_reportcard_changelist"),
+                "permission": _view_perm("report_cards", "reportcard"),
+            },
+            {
+                "title": "Report card weightings",
+                "icon": "percent",
+                "link": reverse_lazy("admin:report_cards_reportcardweighting_changelist"),
+                "permission": _view_perm("report_cards", "reportcardweighting"),
             },
         ],
     },

@@ -18,8 +18,6 @@ from .views import (
     QuestionListCreateView,
     QuestionOptionDetailView,
     QuestionOptionListCreateView,
-    ReportCardDetailView,
-    ReportCardListCreateView,
     ResultDetailView,
     ResultListCreateView,
     ResultPublishView,
@@ -86,6 +84,4 @@ urlpatterns = [
         ResultWorkflowStateListView.as_view(),
         name="result-workflow-state-list",
     ),
-    path("report-cards", ReportCardListCreateView.as_view(), name="report-card-list-create"),
-    path("report-cards/<uuid:public_id>", ReportCardDetailView.as_view(), name="report-card-detail"),
 ]
