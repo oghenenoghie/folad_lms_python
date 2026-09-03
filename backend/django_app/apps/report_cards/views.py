@@ -7,7 +7,8 @@ endpoints rather than a generic PATCH.
 """
 from django.http import HttpResponseRedirect
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import require_permission
@@ -23,6 +24,7 @@ from .serializers import (
     ReportCardGenerateBulkSerializer,
     ReportCardGenerateSerializer,
     ReportCardSerializer,
+    ReportCardVerifySerializer,
     ReportCardWeightingSerializer,
 )
 from .services import report_card_service
@@ -199,3 +201,25 @@ class ReportCardPdfView(APIView):
                 f"PDF not ready (status: {report_card.pdf_status})", status=409
             )
         return HttpResponseRedirect(report_card.pdf_file_url)
+
+
+class ReportCardVerifyThrottle(AnonRateThrottle):
+    scope = "report_card_verify"
+
+
+class ReportCardVerifyView(APIView):
+    """Public verification lookup by verification_code — no auth, no
+    tenant/org scoping (see report_card_service.verify_report_card's
+    docstring for why), reachable by anyone holding a printed report card
+    or its QR code. Deliberately not under IsAuthenticated/require_
+    permission: that's the whole point of a verification endpoint.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ReportCardVerifyThrottle]
+
+    def get(self, request, verification_code):
+        report_card = report_card_service.verify_report_card(verification_code=verification_code)
+        if report_card is None:
+            return error_envelope("No genuine report card found for this code", status=404)
+        return envelope(ReportCardVerifySerializer(report_card).data)

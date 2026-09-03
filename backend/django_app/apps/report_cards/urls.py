@@ -9,6 +9,7 @@ from .views import (
     ReportCardPublishView,
     ReportCardRegenerateView,
     ReportCardUnpublishView,
+    ReportCardVerifyView,
     ReportCardWeightingDetailView,
     ReportCardWeightingListCreateView,
 )
@@ -30,6 +31,11 @@ urlpatterns = [
         "report-cards/generate-bulk",
         ReportCardGenerateBulkView.as_view(),
         name="report-card-generate-bulk",
+    ),
+    path(
+        "report-cards/verify/<str:verification_code>",
+        ReportCardVerifyView.as_view(),
+        name="report-card-verify",
     ),
     path("report-cards/<uuid:public_id>", ReportCardDetailView.as_view(), name="report-card-detail"),
     path(
