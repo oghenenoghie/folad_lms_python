@@ -19,12 +19,15 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     HRFlowable,
+    Image,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
 )
+
+from apps.core.storage import get_file_bytes
 
 from ..models import ReportCard
 
@@ -38,15 +41,42 @@ _BODY = ParagraphStyle("RCBody", parent=_STYLES["Normal"], fontSize=9)
 _CENTERED = ParagraphStyle("RCCentered", parent=_STYLES["Title"], fontSize=14, alignment=1)
 
 
-def _school_header(school) -> list:
-    flowables = [
-        Paragraph(school.name.upper(), _CENTERED),
-    ]
+def _student_photo(student, *, width: float = 2.5 * cm, height: float = 3 * cm) -> Image | None:
+    """None whenever there's no photo, or the stored one can't be read/
+    decoded — a report card renders fine without it (see the photo's own
+    column in _school_header just going blank), and this shouldn't be
+    the reason a whole render fails."""
+    if not student.photo_storage_key:
+        return None
+    photo_bytes = get_file_bytes(student.photo_storage_key)
+    if not photo_bytes:
+        return None
+    try:
+        return Image(io.BytesIO(photo_bytes), width=width, height=height)
+    except Exception:
+        return None
+
+
+def _school_header(school, photo: Image | None) -> list:
+    title_stack = [Paragraph(school.name.upper(), _CENTERED)]
     contact_bits = [bit for bit in (school.address, school.phone, school.email) if bit]
     if contact_bits:
-        flowables.append(Paragraph(" · ".join(contact_bits), _SUBTITLE))
-    flowables.append(Spacer(1, 6))
-    flowables.append(Paragraph("STUDENT ACADEMIC REPORT CARD", _SUBTITLE))
+        title_stack.append(Paragraph(" · ".join(contact_bits), _SUBTITLE))
+    title_stack.append(Spacer(1, 6))
+    title_stack.append(Paragraph("STUDENT ACADEMIC REPORT CARD", _SUBTITLE))
+
+    if photo is not None:
+        # colWidths sum to 18cm — exactly this doc's content width (A4's
+        # 21cm minus the 1.5cm margin on each side), so the photo column
+        # never has to compete with the title stack for space.
+        header_row = Table([[title_stack, photo]], colWidths=[15 * cm, 3 * cm])
+        header_row.setStyle(
+            TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT")])
+        )
+        flowables = [header_row]
+    else:
+        flowables = title_stack
+
     flowables.append(Spacer(1, 4))
     flowables.append(HRFlowable(width="100%", thickness=1, color=colors.black))
     flowables.append(Spacer(1, 8))
@@ -209,13 +239,7 @@ def render_report_card_pdf(report_card: ReportCard) -> bytes:
     school = student.school
 
     story: list = []
-    story.extend(_school_header(school))
-
-    # Student photo isn't embedded yet: apps.core.storage has no "read raw
-    # bytes for a storage key" helper (only save_file/save_document/
-    # get_presigned_download_url), and ReportLab's Image flowable needs
-    # actual bytes, not a URL — adding that helper is a small, separate
-    # change from "the PDF layout", left for a later pass.
+    story.extend(_school_header(school, _student_photo(student)))
     story.append(_student_info_table(report_card))
     story.append(Paragraph("ACADEMIC PERFORMANCE", _HEADING))
     story.append(_subjects_table(report_card))

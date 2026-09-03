@@ -1,7 +1,9 @@
+import io
+
 import pytest
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
-from apps.report_cards.services.report_card_pdf_service import render_report_card_pdf
+from apps.report_cards.services.report_card_pdf_service import _student_photo, render_report_card_pdf
 from apps.report_cards.services.report_card_service import generate_report_card
 
 
@@ -31,6 +33,76 @@ def test_render_report_card_pdf_produces_a_real_pdf(
 
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 500
+
+
+@pytest.mark.django_db
+def test_student_photo_returns_none_when_no_photo_is_on_file(report_card_fixture_set):
+    assert _student_photo(report_card_fixture_set["student"]) is None
+
+
+@pytest.mark.django_db
+def test_student_photo_returns_none_for_an_unreadable_storage_key(report_card_fixture_set):
+    student = report_card_fixture_set["student"]
+    student.photo_storage_key = "students/does-not-exist.png"
+    student.save(update_fields=["photo_storage_key"])
+
+    assert _student_photo(student) is None
+
+
+@pytest.mark.django_db
+def test_student_photo_embeds_a_real_saved_image(report_card_fixture_set):
+    from reportlab.platypus import Image
+
+    from apps.core.storage import save_document
+
+    png_bytes = _tiny_png_bytes()
+    student = report_card_fixture_set["student"]
+    key = save_document(
+        key_prefix=f"students/{student.organization_id}",
+        filename="photo.png",
+        content=png_bytes,
+        content_type="image/png",
+    )
+    student.photo_storage_key = key
+    student.save(update_fields=["photo_storage_key"])
+
+    photo = _student_photo(student)
+
+    assert isinstance(photo, Image)
+
+
+@pytest.mark.django_db
+def test_render_report_card_pdf_embeds_the_student_photo_when_present(
+    organization, report_card_fixture_set, assessment_factory, result_factory,
+):
+    from apps.core.storage import save_document
+
+    fs = report_card_fixture_set
+    assessment = assessment_factory(class_subject=fs["class_subject"], term=fs["term"], score_category="ca")
+    result_factory(assessment=assessment, student=fs["student"], score="75.00", status="published")
+
+    key = save_document(
+        key_prefix=f"students/{fs['student'].organization_id}",
+        filename="photo.png",
+        content=_tiny_png_bytes(),
+        content_type="image/png",
+    )
+    fs["student"].photo_storage_key = key
+    fs["student"].save(update_fields=["photo_storage_key"])
+
+    report_card = generate_report_card(student=fs["student"], term=fs["term"], actor=None)
+    pdf_bytes = render_report_card_pdf(report_card)
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 500
+
+
+def _tiny_png_bytes() -> bytes:
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (100, 120), color=(10, 20, 30)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 @pytest.mark.django_db(transaction=True)
