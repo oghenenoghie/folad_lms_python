@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.academics.models import ClassSubject
 from apps.core.serializers import PublicIdRelatedField
+from apps.core.storage import get_presigned_download_url
 from apps.schools.models import School, Term
 from apps.staff.models import Teacher
 from apps.students.models import Student
@@ -92,11 +93,17 @@ class AssessmentSerializer(serializers.ModelSerializer):
 
 class QuestionSerializer(serializers.ModelSerializer):
     assessment = PublicIdRelatedField(queryset=Assessment.objects)
+    # Read-only: set via QuestionImageView, never through this serializer
+    # (multipart upload, not JSON — see that view's docstring).
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
-        fields = ["public_id", "assessment", "question_type", "text", "marks", "sequence"]
+        fields = ["public_id", "assessment", "question_type", "text", "marks", "sequence", "image_url"]
         validators = []
+
+    def get_image_url(self, obj):
+        return get_presigned_download_url(obj.image_storage_key) if obj.image_storage_key else None
 
 
 class QuestionOptionSerializer(serializers.ModelSerializer):

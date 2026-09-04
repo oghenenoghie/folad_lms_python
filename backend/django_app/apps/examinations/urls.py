@@ -15,6 +15,7 @@ from .views import (
     InvigilatorDeleteView,
     InvigilatorListCreateView,
     QuestionDetailView,
+    QuestionImageView,
     QuestionListCreateView,
     QuestionOptionDetailView,
     QuestionOptionListCreateView,
@@ -58,6 +59,7 @@ urlpatterns = [
     ),
     path("questions", QuestionListCreateView.as_view(), name="question-list-create"),
     path("questions/<uuid:public_id>", QuestionDetailView.as_view(), name="question-detail"),
+    path("questions/<uuid:public_id>/image", QuestionImageView.as_view(), name="question-image"),
     path("question-options", QuestionOptionListCreateView.as_view(), name="question-option-list-create"),
     path(
         "question-options/<uuid:public_id>",

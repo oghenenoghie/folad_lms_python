@@ -8,6 +8,7 @@ Invigilator has no client-facing update: reassigning is unassign-then-
 assign (see invigilator_service), so its detail view only supports DELETE.
 """
 from rest_framework import generics
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -20,6 +21,7 @@ from apps.core.generics import (
     TenantRetrieveUpdateDestroyAPIView,
 )
 from apps.core.responses import envelope, error_envelope
+from apps.core.storage import InvalidUpload
 from apps.students.models import Student
 
 from .models import (
@@ -380,6 +382,42 @@ class QuestionDetailView(TenantRetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         question_service.delete_question(question=instance, actor=self.request.user)
+
+
+class QuestionImageView(APIView):
+    """Multipart, not JSON — same reasoning as apps.documents.views.
+    DocumentUploadView: the file comes from request.FILES, not the JSON
+    body QuestionSerializer otherwise handles. POST attaches/replaces a
+    question's diagram; DELETE removes it.
+    """
+
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated, require_permission("questions.update")]
+
+    def get_object(self, public_id):
+        return generics.get_object_or_404(Question.objects.filter(deleted_at__isnull=True), public_id=public_id)
+
+    def post(self, request, public_id):
+        question = self.get_object(public_id)
+        file_obj = request.FILES.get("file")
+        if file_obj is None:
+            return error_envelope("a file is required", status=400)
+        try:
+            question_service.attach_question_image(
+                question=question,
+                actor=request.user,
+                file_name=file_obj.name,
+                content=file_obj.read(),
+                content_type=file_obj.content_type,
+            )
+        except InvalidUpload as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(QuestionSerializer(question).data, message="image attached")
+
+    def delete(self, request, public_id):
+        question = self.get_object(public_id)
+        question_service.remove_question_image(question=question, actor=request.user)
+        return envelope(QuestionSerializer(question).data, message="image removed")
 
 
 class QuestionOptionListCreateView(TenantListCreateAPIView):
