@@ -29,19 +29,30 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Matches the Next.js frontend's design tokens (src/app/globals.css
+        // there) — a warm cream/forest-green theme, not this app's own
+        // invention. brand-600 is that palette's --primary (#104625)
+        // exactly; the rest of the scale is interpolated around it so
+        // existing brand-50..950 utility classes (hover/focus states,
+        // badges, icons) stay meaningful without touching every template.
         brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
-          950: "#172554",
+          50: "#eef7f1",
+          100: "#d7ecdd",
+          200: "#b0d9bc",
+          300: "#7ebd93",
+          400: "#4f9d6d",
+          500: "#2c7a4d",
+          600: "#104625",
+          700: "#0d3a1f",
+          800: "#0a2e19",
+          900: "#082414",
+          950: "#04140b",
         },
+        // --background/--foreground pulled directly from the frontend's
+        // CSS variables (see input.css's :root/.dark below) so the page
+        // canvas and default text match exactly in both themes.
+        background: "var(--app-background)",
+        foreground: "var(--app-foreground)",
       },
       fontFamily: {
         sans: [

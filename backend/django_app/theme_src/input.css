@@ -2,12 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Page canvas colors, copied verbatim from the Next.js frontend's own
+ * design tokens (src/app/globals.css there: --background/--foreground) —
+ * same warm cream/near-black palette in light mode, same near-black/warm
+ * off-white in dark, so the two frontends read as one product. Consumed
+ * via tailwind.config.js's background/foreground color extension. */
+:root {
+  --app-background: #f8f5ea;
+  --app-foreground: #1d1b10;
+}
+.dark {
+  --app-background: #0f1310;
+  --app-foreground: #f2efe3;
+}
+
 @layer base {
   html {
     @apply antialiased;
   }
   body {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-background text-foreground;
   }
 }
 
