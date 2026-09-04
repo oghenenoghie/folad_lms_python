@@ -40,6 +40,15 @@ class Attendance(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["enrollment", "date"], name="uq_attendance_enrollment_date")
         ]
+        # RLS (see apps.tenancy.db.enable_rls) injects an organization_id =
+        # ... predicate into every query on this table; the dashboard's
+        # date-range widgets (attendance_today_pct, weekly_attendance_series,
+        # attendance_heatmap) then filter by date on top of that — this is
+        # the single fastest-growing table in the schema (one row per
+        # enrollment per school day), so that combination is worth its own
+        # index rather than relying on the enrollment+date unique constraint
+        # above, which doesn't help a date-only/date-range filter.
+        indexes = [models.Index(fields=["organization", "date"], name="idx_attendance_org_date")]
         ordering = ["-date"]
 
     def __str__(self) -> str:

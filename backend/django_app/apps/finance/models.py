@@ -184,6 +184,14 @@ class Invoice(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["school", "invoice_number"], name="uq_invoice_school_number")
         ]
+        # RLS injects organization_id = ... into every query on this table;
+        # apps.core.dashboard_metrics's total_receivables_minor/
+        # top_defaulters both then filter by status + due_date on top of
+        # that, so this composite index covers the actual query shape
+        # rather than relying on separate single-column indexes.
+        indexes = [
+            models.Index(fields=["organization", "status", "due_date"], name="idx_invoice_org_status_due")
+        ]
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -254,6 +262,13 @@ class Payment(BaseModel):
             models.UniqueConstraint(
                 fields=["organization", "reference"], name="uq_payment_organization_reference"
             )
+        ]
+        # apps.core.dashboard_metrics's today_collection_minor/revenue_series
+        # both filter by status="successful" + a paid_at date range within
+        # the RLS-scoped organization — the reference-uniqueness index above
+        # doesn't help either of those.
+        indexes = [
+            models.Index(fields=["organization", "status", "paid_at"], name="idx_payment_org_status_paid")
         ]
         ordering = ["-paid_at"]
 
