@@ -286,6 +286,11 @@ class Question(BaseModel):
     text = models.TextField()
     marks = models.DecimalField(max_digits=5, decimal_places=2)
     sequence = models.PositiveIntegerField()
+    # A diagram/figure/image a teacher attaches to the question text (e.g.
+    # "label the diagram below") — apps.core.storage's store-once-access-
+    # later shape, same as Student.photo_storage_key. Set via the dedicated
+    # QuestionImageView, never through QuestionSerializer directly.
+    image_storage_key = models.CharField(max_length=500, blank=True, default="")
 
     objects = TenantManager()
     all_tenants = models.Manager()

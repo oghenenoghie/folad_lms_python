@@ -143,13 +143,55 @@ Set these on the **Django web service** (not on the Redis service):
 | `LOGIN_LOCKOUT_THRESHOLD` | `5` | Same. |
 | `LOGIN_LOCKOUT_WINDOW_MIN` | `15` | Same. |
 | `MFA_REQUIRED_ROLES` | `SUPER_ADMIN,SCHOOL_ADMIN` | Same. |
+| `STORAGE_BACKEND` | `s3` | Defaults to `s3` even if unset — see below, this is why the rest of this row group is required, not optional. |
+| `STORAGE_BUCKET_NAME` | `sms-documents` | Already provisioned — see below. |
+| `STORAGE_ACCESS_KEY` | a Neon Object Storage credential's `token_id` | See below for how to mint one. |
+| `STORAGE_SECRET_KEY` | that same credential's `s3_secret_access_key` | Shown once at creation — copy it immediately. |
+| `STORAGE_REGION` | `us-east-2` | Matches the Neon project's region. |
+| `STORAGE_ENDPOINT_URL` | `https://<branch-id>.storage.c-5.us-east-2.aws.neon.tech` | The branch-scoped endpoint from `get_storage` / the Console's Object Storage page — see below. |
 
-Not required today, but declared in `backend/.env.example` for when the
-project reaches Milestone 10 (documents/uploads) and gets a frontend:
-`STORAGE_*` (object storage — no `FileField`/`ImageField` exists yet in
-this codebase) and `CORS_ALLOWED_ORIGINS` (no `django-cors-headers`
-middleware is installed yet). Don't set these until the app actually uses
-them.
+**`STORAGE_*` is required, not optional**, despite what an earlier version
+of this doc said (written before any upload feature existed). Several
+apps upload real files today: student photos (`apps.students`), report-
+card PDFs (`apps.report_cards`), documents and assignment submissions
+(`apps.documents`/`apps.assignments`), and exam question images
+(`apps.examinations`). `STORAGE_BACKEND` defaults to `"s3"` — see
+`config.settings.base` — so leaving these unset doesn't fall back to local
+disk storage, it sends every upload to S3 with an empty access key,
+which fails immediately with botocore's `AuthorizationHeaderMalformed`
+(confirmed live: `/admin/students/student/<id>/change/`'s photo upload,
+2026-09-04).
+
+**This project uses Neon Object Storage** (the same Neon project as
+`DATABASE_URL`, `plain-cell-22374610` / `folad_lms_db`, region
+`us-east-2`) rather than a separate AWS S3/R2/Spaces account — one fewer
+provider to manage, and it branches alongside the database. The bucket
+(`sms-documents`, private) is already created on the project's default
+branch. To finish setup:
+
+1. In the [Neon Console](https://console.neon.tech/app/projects/plain-cell-22374610), select the branch, then **Credentials** under **Branch** in the sidebar.
+2. **Create credential** → check `storage:write` (includes read) → name it (e.g. `railway-prod`).
+3. Copy the four values shown (shown once only — they can't be retrieved again):
+   ```
+   AWS_ENDPOINT_URL_S3=https://<branch-id>.storage.c-5.us-east-2.aws.neon.tech
+   AWS_ACCESS_KEY_ID=nak_live_...
+   AWS_SECRET_ACCESS_KEY=nsk_live_...
+   AWS_REGION=us-east-2
+   ```
+4. Map them onto Railway's `STORAGE_*` variables: `AWS_ACCESS_KEY_ID` → `STORAGE_ACCESS_KEY`, `AWS_SECRET_ACCESS_KEY` → `STORAGE_SECRET_KEY`, `AWS_ENDPOINT_URL_S3` → `STORAGE_ENDPOINT_URL`, `AWS_REGION` → `STORAGE_REGION`. Set `STORAGE_BUCKET_NAME=sms-documents` and `STORAGE_BACKEND=s3` directly.
+
+If you'd rather use a different provider (AWS S3, Cloudflare R2, DigitalOcean Spaces), any S3-compatible bucket works the same way — just fill in the same five variables from that provider's console instead.
+
+Path-style S3 addressing is required for a custom endpoint like Neon's
+(bucket in the URL path, not a subdomain) — `apps/core/storage.py`'s
+`_s3_client()` already sets `Config(s3={"addressing_style": "path"})`
+whenever `STORAGE_ENDPOINT_URL` is set, so no extra configuration is
+needed here.
+
+`CORS_ALLOWED_ORIGINS` is still genuinely not needed: the Next.js
+frontend's server-only fetchers (`djangoFetch`/`authorizedDjangoFetch`)
+call this API from the Next.js server, not from the browser, so there is
+no cross-origin browser request to allow.
 
 Do **not** put any of these values into the repository. `backend/.env.example`
 documents the names only, with placeholder/example values.

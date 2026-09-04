@@ -1,9 +1,20 @@
+import io
+
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import ProgrammingError, connection, transaction
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
 from apps.examinations.models import Result, ResultWorkflowState
 from apps.tenancy.context import activate_organization
+
+
+def _tiny_png_bytes() -> bytes:
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (40, 30), color=(200, 100, 50)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _grant(user, *codes):
@@ -315,6 +326,57 @@ def test_question_and_question_option_crud(
 
     deleted = api_client.delete(f"/api/v1/questions/{question_public_id}")
     assert deleted.status_code == 200
+
+
+@pytest.mark.django_db
+def test_teacher_can_attach_and_remove_a_question_image(
+    api_client, organization, user_factory, exam_fixture_set, assessment_factory, question_factory,
+):
+    """A teacher attaching a diagram/figure to a question — the exam-content
+    use case, not the report-card-photo one this multipart shape was first
+    built for.
+    """
+    class_subject = exam_fixture_set["class_subject"]
+    term = exam_fixture_set["term"]
+    assessment = assessment_factory(class_subject=class_subject, term=term)
+    question = question_factory(assessment=assessment, question_type="short_answer", marks="10.00")
+
+    user = user_factory(organization=organization, email="teacher@example.com", password="s3cret-pass!")
+    _grant(user, "questions.view", "questions.update")
+    _login(api_client, "teacher@example.com", "s3cret-pass!")
+
+    upload = SimpleUploadedFile("diagram.png", _tiny_png_bytes(), content_type="image/png")
+    attach = api_client.post(f"/api/v1/questions/{question.public_id}/image", {"file": upload}, format="multipart")
+    assert attach.status_code == 200
+    image_url = attach.json()["data"]["image_url"]
+    assert image_url
+
+    fetched = api_client.get(f"/api/v1/questions/{question.public_id}")
+    assert fetched.json()["data"]["image_url"] == image_url
+
+    removed = api_client.delete(f"/api/v1/questions/{question.public_id}/image")
+    assert removed.status_code == 200
+    assert removed.json()["data"]["image_url"] is None
+
+
+@pytest.mark.django_db
+def test_question_image_upload_rejects_a_disallowed_content_type(
+    api_client, organization, user_factory, exam_fixture_set, assessment_factory, question_factory,
+):
+    class_subject = exam_fixture_set["class_subject"]
+    term = exam_fixture_set["term"]
+    assessment = assessment_factory(class_subject=class_subject, term=term)
+    question = question_factory(assessment=assessment, question_type="short_answer", marks="10.00")
+
+    user = user_factory(organization=organization, email="teacher2@example.com", password="s3cret-pass!")
+    _grant(user, "questions.update")
+    _login(api_client, "teacher2@example.com", "s3cret-pass!")
+
+    upload = SimpleUploadedFile("script.js", b"alert(1)", content_type="application/javascript")
+    response = api_client.post(f"/api/v1/questions/{question.public_id}/image", {"file": upload}, format="multipart")
+    assert response.status_code == 400
+    question.refresh_from_db()
+    assert question.image_storage_key == ""
 
 
 @pytest.mark.django_db
