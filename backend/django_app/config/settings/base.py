@@ -81,6 +81,44 @@ UNFOLD = {
     "SITE_SYMBOL": "school",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
+    # Ramps derived from the real source tokens in
+    # github.com/oghenenoghie/hr-payroll's apps/wagebook/src/app/globals.css
+    # (the same warm cream/forest-green system as the Next.js frontend's
+    # globals.css) rather than eyeballing the deployed site. Each ramp
+    # holds the hue/chroma constant and varies only lightness (oklch L)
+    # through the source's own anchor points — "base" through
+    # bg/surface/border/ink/ink-soft, "primary" through primary-tint/
+    # primary/primary-dark — so Unfold's own light/dark CSS (which picks
+    # different weights per mode from this one scale, not a separate
+    # light/dark pair) inverts correctly with no extra dark-mode config.
+    "COLORS": {
+        "base": {
+            "50": "oklch(99% 0.005 95)",
+            "100": "oklch(97% 0.015 95)",  # bg
+            "200": "oklch(93% 0.02 95)",
+            "300": "oklch(90% 0.02 95)",  # border
+            "400": "oklch(78% 0.02 95)",
+            "500": "oklch(65% 0.02 95)",
+            "600": "oklch(48% 0.02 95)",  # ink-soft
+            "700": "oklch(38% 0.02 95)",
+            "800": "oklch(30% 0.02 95)",
+            "900": "oklch(22% 0.02 95)",  # ink
+            "950": "oklch(15% 0.02 95)",
+        },
+        "primary": {
+            "50": "oklch(97% 0.02 152)",
+            "100": "oklch(94% 0.03 152)",  # primary-tint
+            "200": "oklch(88% 0.05 152)",
+            "300": "oklch(78% 0.07 152)",
+            "400": "oklch(65% 0.09 152)",
+            "500": "oklch(52% 0.10 152)",
+            "600": "oklch(44% 0.09 152)",
+            "700": "oklch(35% 0.08 152)",  # primary
+            "800": "oklch(29% 0.075 152)",
+            "900": "oklch(26% 0.07 152)",  # primary-dark
+            "950": "oklch(18% 0.06 152)",
+        },
+    },
     "DASHBOARD_CALLBACK": "apps.core.dashboard.dashboard_callback",
     "ENVIRONMENT": "apps.core.admin.environment_badge",
     "ENVIRONMENT_TITLE_PREFIX": "apps.core.admin.environment_title_prefix",
