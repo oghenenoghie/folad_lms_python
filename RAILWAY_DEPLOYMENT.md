@@ -143,13 +143,31 @@ Set these on the **Django web service** (not on the Redis service):
 | `LOGIN_LOCKOUT_THRESHOLD` | `5` | Same. |
 | `LOGIN_LOCKOUT_WINDOW_MIN` | `15` | Same. |
 | `MFA_REQUIRED_ROLES` | `SUPER_ADMIN,SCHOOL_ADMIN` | Same. |
+| `STORAGE_BACKEND` | `s3` | Defaults to `s3` even if unset — see below, this is why the rest of this row group is required, not optional. |
+| `STORAGE_BUCKET_NAME` | your bucket name | |
+| `STORAGE_ACCESS_KEY` | your access key | |
+| `STORAGE_SECRET_KEY` | your secret key | |
+| `STORAGE_REGION` | e.g. `us-east-1` | |
+| `STORAGE_ENDPOINT_URL` | only if not real AWS S3 | e.g. the Cloudflare R2 or DigitalOcean Spaces endpoint. Leave unset for AWS S3 itself. |
 
-Not required today, but declared in `backend/.env.example` for when the
-project reaches Milestone 10 (documents/uploads) and gets a frontend:
-`STORAGE_*` (object storage — no `FileField`/`ImageField` exists yet in
-this codebase) and `CORS_ALLOWED_ORIGINS` (no `django-cors-headers`
-middleware is installed yet). Don't set these until the app actually uses
-them.
+**`STORAGE_*` is required, not optional**, despite what an earlier version
+of this doc said (written before any upload feature existed). Several
+apps upload real files today: student photos (`apps.students`), report-
+card PDFs (`apps.report_cards`), documents and assignment submissions
+(`apps.documents`/`apps.assignments`), and exam question images
+(`apps.examinations`). `STORAGE_BACKEND` defaults to `"s3"` — see
+`config.settings.base` — so leaving these unset doesn't fall back to local
+disk storage, it sends every upload to S3 with an empty access key,
+which fails immediately with botocore's `AuthorizationHeaderMalformed`
+(confirmed live: `/admin/students/student/<id>/change/`'s photo upload,
+2026-09-04). Provision a bucket (AWS S3, Cloudflare R2, DigitalOcean
+Spaces, or similar) and set all of the above before any upload feature is
+used in this environment.
+
+`CORS_ALLOWED_ORIGINS` is still genuinely not needed: the Next.js
+frontend's server-only fetchers (`djangoFetch`/`authorizedDjangoFetch`)
+call this API from the Next.js server, not from the browser, so there is
+no cross-origin browser request to allow.
 
 Do **not** put any of these values into the repository. `backend/.env.example`
 documents the names only, with placeholder/example values.
