@@ -162,6 +162,30 @@ def test_dashboard_attendance_today_with_no_records_shows_dash(
 
 
 @pytest.mark.django_db
+def test_dashboard_callback_caches_widgets_for_the_ttl(
+    client, superuser, organization, school_factory, student_factory, settings,
+):
+    _use_plain_staticfiles_storage(settings)
+    school = school_factory(organization=organization)
+    student_factory(school=school, admission_number="CACHE1")
+    client.force_login(superuser)
+    activate_organization(None)
+
+    first = client.get(reverse("admin:index"))
+    assert first.status_code == 200
+    first_kpis = {card["title"]: card["value"] for card in first.context["kpi_cards"]}
+    assert first_kpis["Total Students"] == 1
+
+    # A student created after the first request shouldn't show up in the
+    # KPI count until the cache entry expires — proves dashboard_callback
+    # is actually caching rather than recomputing every request.
+    student_factory(school=school, admission_number="CACHE2")
+    second = client.get(reverse("admin:index"))
+    second_kpis = {card["title"]: card["value"] for card in second.context["kpi_cards"]}
+    assert second_kpis["Total Students"] == 1
+
+
+@pytest.mark.django_db
 def test_dashboard_kpi_cards_reflect_real_counts(
     client, superuser, organization, school_factory, student_factory, staff_factory,
     teacher_factory, achievement_factory, settings,

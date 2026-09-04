@@ -77,7 +77,7 @@ class ReportCardListView(TenantListAPIView):
     serializer_class = ReportCardSerializer
 
     def get_queryset(self):
-        qs = ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects")
+        qs = ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects__subject")
         student_id = self.request.query_params.get("student_id")
         term_id = self.request.query_params.get("term_id")
         class_arm_id = self.request.query_params.get("class_arm_id")
@@ -105,7 +105,7 @@ class ReportCardDetailView(TenantRetrieveUpdateDestroyAPIView):
     serializer_class = ReportCardSerializer
 
     def get_queryset(self):
-        return ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects")
+        return ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects__subject")
 
     def get_permissions(self):
         code = "report_cards.view" if self.request.method == "GET" else "report_cards.update"
@@ -125,7 +125,7 @@ class ReportCardAuditListView(TenantListAPIView):
     serializer_class = ReportCardAuditSerializer
 
     def get_queryset(self):
-        qs = ReportCardAudit.objects.all()
+        qs = ReportCardAudit.objects.select_related("changed_by")
         report_card_id = self.request.query_params.get("report_card_id")
         if report_card_id:
             qs = qs.filter(report_card__public_id=report_card_id)

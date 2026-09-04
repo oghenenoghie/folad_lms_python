@@ -19,6 +19,7 @@ numbers for them would be worse than not showing them.
 """
 import json
 
+from django.core.cache import cache
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -103,10 +104,31 @@ def _gender_donut_json(breakdown: dict[str, int]) -> str:
     )
 
 
+DASHBOARD_CALLBACK_CACHE_KEY = "dashboard:admin_callback_context:v1"
+DASHBOARD_CALLBACK_CACHE_TTL_SECONDS = 60
+
+
 def dashboard_callback(request: HttpRequest, context: dict) -> dict:
+    """Every widget below is its own aggregate query (~20 total) — cached
+    for a short TTL since this runs on every /admin/ index page view and
+    none of these numbers need to be more real-time than "up to a minute
+    old". Cached value is plain dicts/strings only (see
+    _compute_dashboard_context), never model instances, so it's cheap to
+    pickle and never goes stale in an unpicklable way.
+    """
+    extra = cache.get(DASHBOARD_CALLBACK_CACHE_KEY)
+    if extra is None:
+        extra = _compute_dashboard_context()
+        cache.set(DASHBOARD_CALLBACK_CACHE_KEY, extra, DASHBOARD_CALLBACK_CACHE_TTL_SECONDS)
+    context.update(extra)
+    return context
+
+
+def _compute_dashboard_context() -> dict:
     today = timezone.localdate()
     attendance_pct = metrics.attendance_today_pct(Attendance.all_tenants)
     gender_breakdown = metrics.gender_breakdown(Student.all_tenants)
+    context: dict = {}
 
     # Primary KPI row — matches the requested layout: 3 warm-accent cards
     # plus a strong-accent 4th card, all real counts.
@@ -183,9 +205,17 @@ def dashboard_callback(request: HttpRequest, context: dict) -> dict:
     context["attendance_heatmap"] = metrics.attendance_heatmap(Attendance.all_tenants)
     context["top_defaulters"] = metrics.top_defaulters(Invoice.all_tenants)
 
-    context["recent_logins"] = list(
-        LoginHistory.all_tenants.select_related("user", "organization")
-        .order_by("-created_at")[:8]
-    )
+    # Plain dicts rather than model instances — keeps the cached value
+    # simple to pickle and independent of any later field/relation changes
+    # on LoginHistory/User/Organization.
+    context["recent_logins"] = [
+        {
+            "user": {"email": login.user.email},
+            "organization": str(login.organization) if login.organization_id else None,
+            "success": login.success,
+            "created_at": login.created_at,
+        }
+        for login in LoginHistory.all_tenants.select_related("user", "organization").order_by("-created_at")[:8]
+    ]
 
     return context

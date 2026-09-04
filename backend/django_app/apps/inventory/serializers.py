@@ -34,7 +34,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "public_id", "school", "supplier", "item", "order_number", "quantity_ordered",
             "unit_cost_minor", "currency_code", "status", "ordered_at", "received_at",
         ]
-        read_only_fields = ["currency_code", "status", "ordered_at", "received_at"]
+        read_only_fields = ["order_number", "currency_code", "status", "ordered_at", "received_at"]
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

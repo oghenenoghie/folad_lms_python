@@ -678,7 +678,7 @@ class ResultWorkflowStateListView(TenantListAPIView):
     serializer_class = ResultWorkflowStateSerializer
 
     def get_queryset(self):
-        qs = ResultWorkflowState.objects.all()
+        qs = ResultWorkflowState.objects.select_related("changed_by")
         result_id = self.request.query_params.get("result_id")
         if result_id:
             qs = qs.filter(result__public_id=result_id)

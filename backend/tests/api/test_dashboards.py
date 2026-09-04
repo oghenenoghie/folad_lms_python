@@ -181,6 +181,42 @@ def test_admin_dashboard_summary_includes_real_finance_and_attendance_metrics(
 
 
 @pytest.mark.django_db
+def test_admin_dashboard_summary_is_cached_for_the_ttl(
+    api_client, organization, user_factory, school_factory, student_factory,
+):
+    school = school_factory(organization=organization)
+    user_factory(organization=organization, email="admin4@example.com", password="s3cret-pass!")
+    _login(api_client, "admin4@example.com", "s3cret-pass!")
+
+    first = api_client.get("/api/v1/dashboard/summary").json()["data"]
+    assert first["total_students"] == 0
+
+    # A student created after the first request shouldn't show up until the
+    # cache entry expires — proves _cached_admin_summary is actually caching
+    # rather than recomputing every request.
+    student_factory(school=school)
+    second = api_client.get("/api/v1/dashboard/summary").json()["data"]
+    assert second["total_students"] == 0
+
+
+@pytest.mark.django_db
+def test_admin_dashboard_summary_cache_is_scoped_per_organization(
+    api_client, organization, other_organization, user_factory, school_factory, student_factory,
+):
+    user_factory(organization=organization, email="admin-a@example.com", password="s3cret-pass!")
+    user_factory(organization=other_organization, email="admin-b@example.com", password="s3cret-pass!")
+    student_factory(school=school_factory(organization=organization))
+
+    _login(api_client, "admin-a@example.com", "s3cret-pass!")
+    data_a = api_client.get("/api/v1/dashboard/summary").json()["data"]
+    assert data_a["total_students"] == 1
+
+    _login(api_client, "admin-b@example.com", "s3cret-pass!")
+    data_b = api_client.get("/api/v1/dashboard/summary").json()["data"]
+    assert data_b["total_students"] == 0
+
+
+@pytest.mark.django_db
 def test_admin_dashboard_summary_includes_eduportal_widgets(
     api_client, organization, user_factory, school_factory, student_factory, staff_factory,
     teacher_factory, achievement_factory, message_factory, announcement_factory,
