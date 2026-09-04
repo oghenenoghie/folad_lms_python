@@ -122,6 +122,7 @@ def get_file_bytes(key: str) -> bytes | None:
 
 def _s3_client():
     import boto3
+    from botocore.config import Config
 
     return boto3.client(
         "s3",
@@ -129,6 +130,11 @@ def _s3_client():
         aws_access_key_id=settings.STORAGE_ACCESS_KEY,
         aws_secret_access_key=settings.STORAGE_SECRET_KEY,
         region_name=settings.STORAGE_REGION,
+        # Path-style addressing (bucket in the URL path, not a subdomain) —
+        # required by Neon Object Storage and most other S3-compatible
+        # providers (MinIO, etc.) when STORAGE_ENDPOINT_URL is set; boto3's
+        # virtual-hosted-style default only resolves against real AWS S3.
+        config=Config(s3={"addressing_style": "path"}) if settings.STORAGE_ENDPOINT_URL else None,
     )
 
 
