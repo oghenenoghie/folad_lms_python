@@ -1,4 +1,5 @@
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
 from apps.students.models import Student
@@ -236,3 +237,105 @@ def test_student_app_layer_tenant_isolation(organization, other_organization, sc
 
     assert visible.count() == 1
     assert visible.first().organization_id == organization.id
+
+
+@pytest.mark.django_db
+def test_student_bulk_import_csv_creates_students(api_client, organization, user_factory, school_factory):
+    school = school_factory(organization=organization, code="BULK1")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = (
+        "school_code,first_name,last_name,date_of_birth,gender,email\n"
+        "BULK1,Ada,Okafor,2012-03-04,female,ada@example.com\n"
+        "BULK1,Femi,Adeyemi,2013-01-01,male,\n"
+    )
+    upload = SimpleUploadedFile("roster.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+    response = api_client.post("/api/v1/students/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["created"] == 2
+    assert data["errors"] == []
+    assert Student.all_tenants.filter(school=school).count() == 2
+
+
+@pytest.mark.django_db
+def test_student_bulk_import_reports_bad_rows_without_aborting_the_batch(
+    api_client, organization, user_factory, school_factory,
+):
+    school_factory(organization=organization, code="BULK2")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = (
+        "school_code,first_name,last_name,date_of_birth\n"
+        "BULK2,Good,Row,2012-03-04\n"
+        "NOSUCHCODE,Bad,School,2012-03-04\n"
+        "BULK2,Missing,Dob,\n"
+    )
+    upload = SimpleUploadedFile("roster.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+    response = api_client.post("/api/v1/students/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["created"] == 1
+    assert len(data["errors"]) == 2
+    assert data["errors"][0]["row"] == 3
+    assert "NOSUCHCODE" in data["errors"][0]["error"]
+    assert data["errors"][1]["row"] == 4
+    assert "date_of_birth" in data["errors"][1]["error"]
+
+
+@pytest.mark.django_db
+def test_student_bulk_import_rejects_an_unsupported_file_type(
+    api_client, organization, user_factory, school_factory,
+):
+    school_factory(organization=organization)
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    upload = SimpleUploadedFile("roster.txt", b"not a csv", content_type="text/plain")
+    response = api_client.post("/api/v1/students/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_student_bulk_import_requires_students_create_permission(
+    api_client, organization, user_factory, school_factory,
+):
+    school_factory(organization=organization, code="BULK3")
+    user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = "school_code,first_name,last_name,date_of_birth\nBULK3,Ada,Okafor,2012-03-04\n"
+    upload = SimpleUploadedFile("roster.csv", csv_content.encode("utf-8"), content_type="text/csv")
+    response = api_client.post("/api/v1/students/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_student_bulk_import_cross_tenant_school_code_is_rejected(
+    api_client, organization, other_organization, user_factory, school_factory,
+):
+    school_factory(organization=other_organization, code="OTHERORG")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "students.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = "school_code,first_name,last_name,date_of_birth\nOTHERORG,Ada,Okafor,2012-03-04\n"
+    upload = SimpleUploadedFile("roster.csv", csv_content.encode("utf-8"), content_type="text/csv")
+    response = api_client.post("/api/v1/students/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["created"] == 0
+    assert len(data["errors"]) == 1
+    assert "OTHERORG" in data["errors"][0]["error"]
