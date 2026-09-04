@@ -75,7 +75,7 @@ class AttendanceAuditListView(TenantListAPIView):
     serializer_class = AttendanceAuditSerializer
 
     def get_queryset(self):
-        qs = AttendanceAudit.objects.all()
+        qs = AttendanceAudit.objects.select_related("changed_by")
         attendance_id = self.request.query_params.get("attendance_id")
         if attendance_id:
             qs = qs.filter(attendance__public_id=attendance_id)

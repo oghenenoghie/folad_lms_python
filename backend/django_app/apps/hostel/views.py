@@ -253,7 +253,7 @@ class HostelIncidentListCreateView(TenantListCreateAPIView):
     serializer_class = HostelIncidentSerializer
 
     def get_queryset(self):
-        qs = HostelIncident.objects.filter(deleted_at__isnull=True)
+        qs = HostelIncident.objects.select_related("reported_by").filter(deleted_at__isnull=True)
         hostel_id = self.request.query_params.get("hostel_id")
         status_param = self.request.query_params.get("status")
         if hostel_id:
