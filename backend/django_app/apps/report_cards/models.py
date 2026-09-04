@@ -98,6 +98,12 @@ class ReportCard(BaseModel):
     total_score = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_possible_score = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     average_percentage = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    # The same grade/remark lookup _resolve_grade() already runs per subject,
+    # applied once more to average_percentage — a single descriptive grade
+    # for the term as a whole (e.g. "B2" / "Very Good"), distinct from the
+    # free-text teacher_comment/principal_comment below.
+    overall_grade = models.CharField(max_length=10, blank=True, default="")
+    overall_remark = models.CharField(max_length=100, blank=True, default="")
     class_position = models.PositiveIntegerField(null=True, blank=True)
     class_size = models.PositiveIntegerField(default=0)
     attendance_present = models.PositiveIntegerField(default=0)
@@ -148,6 +154,11 @@ class ReportCardSubject(BaseModel):
     grade = models.CharField(max_length=10, blank=True, default="")
     remark = models.CharField(max_length=255, blank=True, default="")
     class_position = models.PositiveIntegerField(null=True, blank=True)
+    # This subject's class-wide average percentage this term — set
+    # alongside class_position by report_card_service._recompute_positions,
+    # so a student can see how their score compares, same as a printed
+    # Nigerian report card's "Class Average" column.
+    class_average = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     teacher_comment = models.TextField(blank=True, default="")
 
     objects = TenantManager()
@@ -258,3 +269,82 @@ class ReportCardBulkExport(BaseModel):
     def __str__(self) -> str:
         scope = self.class_arm if self.class_arm_id else "whole year"
         return f"Bulk export - {self.term} - {scope} ({self.status})"
+
+
+# 5 (Excellent) down to 1 (Poor) — the affective/psychomotor domain rating
+# scale standard on a Nigerian primary/secondary report card, printed on
+# the PDF as its own legend (see report_card_pdf_service._psychomotor_
+# legend), separate from the academic A1-F9/A-F grading scheme.
+PSYCHOMOTOR_RATING_CHOICES = [
+    (5, "Excellent"),
+    (4, "Very Good"),
+    (3, "Good"),
+    (2, "Fair"),
+    (1, "Poor"),
+]
+PSYCHOMOTOR_RATING_LABELS = dict(PSYCHOMOTOR_RATING_CHOICES)
+
+
+class PsychomotorTrait(BaseModel):
+    """One row of a school's configurable affective/psychomotor domain
+    checklist (e.g. "Punctuality", "Neatness", "Handwriting") — the
+    non-academic skills every Nigerian report card rates alongside subject
+    scores. Lazily seeded with report_card_service.DEFAULT_PSYCHOMOTOR_
+    TRAITS the first time a school's report cards need them (same
+    get-or-create-on-first-use convention as ReportCardWeighting), but
+    fully editable per school afterward — some schools rate different
+    traits, or in a different order, than this app's own defaults.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    school = models.ForeignKey(
+        "schools.School", on_delete=models.PROTECT, related_name="psychomotor_traits"
+    )
+    name = models.CharField(max_length=100)
+    order = models.PositiveIntegerField(default=0)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "report_cards_psychomotor_trait"
+        constraints = [
+            models.UniqueConstraint(fields=["school", "name"], name="uq_psychomotor_trait_school_name")
+        ]
+        ordering = ["order", "name"]
+
+    def __str__(self) -> str:
+        return f"{self.school}: {self.name}"
+
+
+class PsychomotorRating(BaseModel):
+    """One student's rating on one PsychomotorTrait for one ReportCard —
+    entered by a teacher (see report_card_service.set_psychomotor_ratings),
+    never computed from Result data the way academic subject scores are.
+    Deliberately untouched by generate_report_card()/regeneration: a
+    regenerate only refreshes academic numbers pulled from Result/
+    Attendance, and shouldn't silently wipe a teacher's already-entered
+    conduct ratings for the term.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    report_card = models.ForeignKey(
+        ReportCard, on_delete=models.CASCADE, related_name="psychomotor_ratings"
+    )
+    trait = models.ForeignKey(PsychomotorTrait, on_delete=models.PROTECT, related_name="+")
+    rating = models.PositiveSmallIntegerField(choices=PSYCHOMOTOR_RATING_CHOICES)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "report_cards_psychomotor_rating"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report_card", "trait"], name="uq_psychomotor_rating_card_trait"
+            )
+        ]
+        ordering = ["trait__order", "trait__name"]
+
+    def __str__(self) -> str:
+        return f"{self.report_card} - {self.trait}: {self.get_rating_display()}"

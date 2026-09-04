@@ -9,6 +9,7 @@ two comment blocks, signature lines) is what Platypus's automatic page
 flow and Table/Paragraph flowables are for.
 """
 import io
+from datetime import date
 
 from django.conf import settings
 from reportlab.graphics.barcode.qr import QrCodeWidget
@@ -28,8 +29,9 @@ from reportlab.platypus import (
 )
 
 from apps.core.storage import get_file_bytes
+from apps.examinations.models import GradeBand, GradingScheme
 
-from ..models import ReportCard
+from ..models import PSYCHOMOTOR_RATING_LABELS, ReportCard
 
 _STYLES = getSampleStyleSheet()
 _TITLE = ParagraphStyle("RCTitle", parent=_STYLES["Title"], fontSize=16, spaceAfter=2)
@@ -83,8 +85,16 @@ def _school_header(school, photo: Image | None) -> list:
     return flowables
 
 
+def _age(dob, *, as_of: date) -> str:
+    if not dob:
+        return "—"
+    years = as_of.year - dob.year - ((as_of.month, as_of.day) < (dob.month, dob.day))
+    return f"{years} yrs"
+
+
 def _student_info_table(report_card: ReportCard) -> Table:
     student = report_card.student
+    as_of = (report_card.generated_at.date() if report_card.generated_at else date.today())
     rows = [
         ["Name:", f"{student.first_name} {student.last_name}", "Admission No:", student.admission_number],
         [
@@ -99,6 +109,7 @@ def _student_info_table(report_card: ReportCard) -> Table:
             "Term:",
             report_card.term.name,
         ],
+        ["Age:", _age(student.date_of_birth, as_of=as_of), "No. in Class:", str(report_card.class_size or "—")],
     ]
     table = Table(rows, colWidths=[3.2 * cm, 5.3 * cm, 3.2 * cm, 5.3 * cm])
     table.setStyle(
@@ -116,7 +127,7 @@ def _student_info_table(report_card: ReportCard) -> Table:
 
 
 def _subjects_table(report_card: ReportCard) -> Table:
-    header = ["Subject", "CA", "CBT", "Exam", "Total", "%", "Grade", "Remark"]
+    header = ["Subject", "CA", "CBT", "Exam", "Total", "%", "Class Avg", "Grade", "Remark"]
     rows = [header]
     for subject_row in report_card.subjects.select_related("subject").order_by("subject__name"):
         rows.append(
@@ -127,13 +138,14 @@ def _subjects_table(report_card: ReportCard) -> Table:
                 f"{subject_row.exam_score}/{subject_row.exam_max_score}",
                 str(subject_row.total_score),
                 f"{subject_row.percentage}%",
+                f"{subject_row.class_average}%" if subject_row.class_average is not None else "—",
                 subject_row.grade or "—",
                 subject_row.remark or "—",
             ]
         )
     table = Table(
         rows,
-        colWidths=[3.6 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 1.6 * cm, 1.6 * cm, 3.4 * cm],
+        colWidths=[3.2 * cm, 1.5 * cm, 1.5 * cm, 1.5 * cm, 1.5 * cm, 1.3 * cm, 1.7 * cm, 1.3 * cm, 3.9 * cm],
         repeatRows=1,
     )
     table.setStyle(
@@ -162,6 +174,7 @@ def _overview_table(report_card: ReportCard) -> Table:
     )
     rows = [
         ["Average", f"{report_card.average_percentage}%", "Position", position],
+        ["Overall Grade", report_card.overall_grade or "—", "Overall Remark", report_card.overall_remark or "—"],
         [
             "School Days",
             str(report_card.attendance_present + report_card.attendance_absent),
@@ -183,6 +196,75 @@ def _overview_table(report_card: ReportCard) -> Table:
         )
     )
     return table
+
+
+def _psychomotor_table(report_card: ReportCard) -> Table | None:
+    """None when the school hasn't rated this term yet (e.g. a report just
+    generated and not yet reviewed by a teacher) — the section header this
+    accompanies is skipped too rather than printing an empty table."""
+    ratings = list(
+        report_card.psychomotor_ratings.select_related("trait").order_by("trait__order", "trait__name")
+    )
+    if not ratings:
+        return None
+
+    # Two traits per row keeps this compact — a school's checklist can run
+    # to 8+ traits, and one-per-row would push the affective domain onto
+    # its own extra page for no real benefit.
+    header = ["Trait", "Rating", "Trait", "Rating"]
+    rows = [header]
+    pairs = list(ratings)
+    for i in range(0, len(pairs), 2):
+        left = pairs[i]
+        right = pairs[i + 1] if i + 1 < len(pairs) else None
+        rows.append(
+            [
+                left.trait.name,
+                left.get_rating_display(),
+                right.trait.name if right else "",
+                right.get_rating_display() if right else "",
+            ]
+        )
+    table = Table(rows, colWidths=[4.5 * cm, 4.5 * cm, 4.5 * cm, 4.5 * cm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    return table
+
+
+def _psychomotor_legend() -> Paragraph:
+    key = " · ".join(f"{value}={label}" for value, label in PSYCHOMOTOR_RATING_LABELS.items())
+    return Paragraph(f"<b>Rating key:</b> {key}", _BODY)
+
+
+def _grading_legend(school) -> Paragraph | None:
+    """The active grading scheme's own bands, printed once so the grade
+    letters on the subjects table above are self-explanatory on a
+    standalone printout — None when the school hasn't configured a
+    GradingScheme yet (report_card_service._resolve_grade already
+    tolerates that; this mirrors the same best-effort fallback)."""
+    scheme = (
+        GradingScheme.objects.filter(school=school, is_default=True).first()
+        or GradingScheme.objects.filter(school=school).first()
+    )
+    if scheme is None:
+        return None
+    bands = GradeBand.objects.filter(grading_scheme=scheme).order_by("-min_score")
+    if not bands:
+        return None
+    key = " · ".join(f"{band.grade} ({band.min_score}-{band.max_score})" for band in bands)
+    return Paragraph(f"<b>Grading key ({scheme.name}):</b> {key}", _BODY)
 
 
 def _verification_url(report_card: ReportCard) -> str:
@@ -243,8 +325,20 @@ def render_report_card_pdf(report_card: ReportCard) -> bytes:
     story.append(_student_info_table(report_card))
     story.append(Paragraph("ACADEMIC PERFORMANCE", _HEADING))
     story.append(_subjects_table(report_card))
+    grading_legend = _grading_legend(school)
+    if grading_legend is not None:
+        story.append(Spacer(1, 4))
+        story.append(grading_legend)
+
     story.append(Paragraph("OVERALL PERFORMANCE & ATTENDANCE", _HEADING))
     story.append(_overview_table(report_card))
+
+    psychomotor_table = _psychomotor_table(report_card)
+    if psychomotor_table is not None:
+        story.append(Paragraph("AFFECTIVE & PSYCHOMOTOR DOMAIN", _HEADING))
+        story.append(psychomotor_table)
+        story.append(Spacer(1, 4))
+        story.append(_psychomotor_legend())
 
     story.append(Paragraph("COMMENTS", _HEADING))
     story.extend(_signature_block("Teacher's comment", report_card.teacher_comment, "Teacher"))

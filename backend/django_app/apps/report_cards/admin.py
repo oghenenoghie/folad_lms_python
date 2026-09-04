@@ -4,6 +4,8 @@ from unfold.admin import ModelAdmin
 from apps.core.admin import TenantAdminMixin
 
 from .models import (
+    PsychomotorRating,
+    PsychomotorTrait,
     ReportCard,
     ReportCardAudit,
     ReportCardBulkExport,
@@ -18,8 +20,14 @@ class ReportCardSubjectInline(admin.TabularInline):
     autocomplete_fields = ["organization", "subject"]
     readonly_fields = [
         "ca_score", "ca_max_score", "cbt_score", "cbt_max_score", "exam_score", "exam_max_score",
-        "total_score", "percentage", "grade", "class_position",
+        "total_score", "percentage", "grade", "class_position", "class_average",
     ]
+
+
+class PsychomotorRatingInline(admin.TabularInline):
+    model = PsychomotorRating
+    extra = 0
+    autocomplete_fields = ["organization", "trait"]
 
 
 @admin.register(ReportCard)
@@ -33,11 +41,11 @@ class ReportCardAdmin(TenantAdminMixin, ModelAdmin):
     autocomplete_fields = ["organization", "student", "academic_year", "term", "class_level", "class_arm"]
     readonly_fields = [
         "report_card_number", "verification_code", "total_score", "total_possible_score",
-        "average_percentage", "class_position", "class_size", "attendance_present",
-        "attendance_absent", "attendance_percentage", "generated_at", "published_at",
-        "pdf_status", "pdf_file_url", "pdf_generated_at", "pdf_error_message",
+        "average_percentage", "overall_grade", "overall_remark", "class_position", "class_size",
+        "attendance_present", "attendance_absent", "attendance_percentage", "generated_at",
+        "published_at", "pdf_status", "pdf_file_url", "pdf_generated_at", "pdf_error_message",
     ]
-    inlines = [ReportCardSubjectInline]
+    inlines = [ReportCardSubjectInline, PsychomotorRatingInline]
 
     # Calculated by report_card_service.generate_report_card, not hand-editable.
     def has_add_permission(self, request):
@@ -48,6 +56,15 @@ class ReportCardAdmin(TenantAdminMixin, ModelAdmin):
 class ReportCardWeightingAdmin(TenantAdminMixin, ModelAdmin):
     list_display = ["school", "ca_weight", "cbt_weight", "exam_weight"]
     autocomplete_fields = ["organization", "school"]
+
+
+@admin.register(PsychomotorTrait)
+class PsychomotorTraitAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["school", "name", "order"]
+    list_filter = ["school"]
+    search_fields = ["name"]
+    autocomplete_fields = ["organization", "school"]
+    ordering = ["school", "order", "name"]
 
 
 @admin.register(ReportCardBulkExport)

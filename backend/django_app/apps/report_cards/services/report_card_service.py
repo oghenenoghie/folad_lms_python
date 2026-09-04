@@ -32,10 +32,32 @@ from apps.examinations.services.result_service import _resolve_grade
 from apps.schools.models import Term
 from apps.students.models import Student
 
-from ..models import ReportCard, ReportCardAudit, ReportCardSubject, ReportCardWeighting
+from ..models import (
+    PsychomotorRating,
+    PsychomotorTrait,
+    ReportCard,
+    ReportCardAudit,
+    ReportCardSubject,
+    ReportCardWeighting,
+)
 from ..tasks.reports import generate_report_card_pdf
 
 SCORE_CATEGORIES = ("ca", "cbt", "exam")
+
+# The 8 affective/psychomotor domain traits standard on a Nigerian
+# primary/secondary report card — seeded once per school on first use by
+# get_or_create_default_traits, then fully editable from there (see
+# PsychomotorTrait's docstring).
+DEFAULT_PSYCHOMOTOR_TRAITS = [
+    "Punctuality",
+    "Attendance",
+    "Neatness",
+    "Politeness",
+    "Honesty",
+    "Attentiveness",
+    "Leadership",
+    "Sports/Games",
+]
 
 
 class ReportCardError(Exception):
@@ -46,11 +68,56 @@ class InvalidReportCardTransition(Exception):
     """A publish/unpublish/archive call not valid from the current status."""
 
 
+class InvalidPsychomotorRating(Exception):
+    """A rating submission referenced a trait that doesn't belong to this
+    report card's own school, or wasn't a valid PSYCHOMOTOR_RATING_CHOICES
+    value."""
+
+
 def get_or_create_weighting(*, school) -> ReportCardWeighting:
     weighting, _ = ReportCardWeighting.objects.get_or_create(
         school=school, defaults={"organization": school.organization}
     )
     return weighting
+
+
+def get_or_create_default_traits(*, school) -> list[PsychomotorTrait]:
+    existing = list(PsychomotorTrait.objects.filter(school=school))
+    if existing:
+        return existing
+    return [
+        PsychomotorTrait.objects.create(organization=school.organization, school=school, name=name, order=index)
+        for index, name in enumerate(DEFAULT_PSYCHOMOTOR_TRAITS)
+    ]
+
+
+def set_psychomotor_ratings(
+    *, report_card: ReportCard, ratings: dict[int, int], actor
+) -> list[PsychomotorRating]:
+    """`ratings` maps PsychomotorTrait.id -> rating (1-5). Upserts one row
+    per trait given; existing ratings for traits not mentioned are left
+    untouched (a partial submission doesn't wipe the rest of the term's
+    conduct ratings). `actor` isn't persisted anywhere yet (unlike the
+    generate/publish/etc. transitions below, there's no per-rating audit
+    trail) — kept in the signature for consistency with every other
+    mutating function here, and so one can be added later without an
+    API-facing change."""
+    school = report_card.student.school
+    trait_ids = set(ratings.keys())
+    traits_by_id = {t.id: t for t in PsychomotorTrait.objects.filter(id__in=trait_ids, school=school)}
+    missing = trait_ids - traits_by_id.keys()
+    if missing:
+        raise InvalidPsychomotorRating(f"trait id(s) {sorted(missing)} do not belong to {school}")
+
+    saved = []
+    for trait_id, rating in ratings.items():
+        obj, _ = PsychomotorRating.objects.update_or_create(
+            report_card=report_card,
+            trait_id=trait_id,
+            defaults={"organization": report_card.organization, "rating": rating},
+        )
+        saved.append(obj)
+    return saved
 
 
 def _consolidate_subject(*, results, weighting: ReportCardWeighting) -> dict:
@@ -107,10 +174,12 @@ def _recompute_positions(*, class_arm: ClassArm, term: Term) -> None:
             subject_rows.setdefault(subject_row.subject_id, []).append(subject_row)
     for rows in subject_rows.values():
         rows.sort(key=lambda r: r.percentage, reverse=True)
+        class_average = round(sum((r.percentage for r in rows), Decimal(0)) / len(rows), 2)
         for index, row in enumerate(rows, start=1):
-            if row.class_position != index:
+            if row.class_position != index or row.class_average != class_average:
                 row.class_position = index
-                row.save(update_fields=["class_position", "updated_at"])
+                row.class_average = class_average
+                row.save(update_fields=["class_position", "class_average", "updated_at"])
 
 
 def _write_audit(
@@ -151,6 +220,12 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
         raise ReportCardError(f"{student} has no enrollment for {academic_year}")
 
     weighting = get_or_create_weighting(school=student.school)
+    # Ensures a school's affective/psychomotor checklist exists as soon as
+    # its first report card does, so a teacher has something to rate
+    # against immediately — same lazy-seed convention as the weighting
+    # above. Ratings themselves are entered separately (set_psychomotor_
+    # ratings), never touched by generation/regeneration.
+    get_or_create_default_traits(school=student.school)
 
     results = (
         Result.objects.filter(
@@ -206,6 +281,7 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
 
     subject_count = len(by_subject)
     average_percentage = round(total_score / subject_count, 2) if subject_count else Decimal(0)
+    overall_grade, overall_remark = _resolve_grade(school=student.school, score=average_percentage)
 
     attendance_qs = Attendance.objects.filter(
         enrollment=enrollment, date__gte=term.start_date, date__lte=term.end_date
@@ -219,6 +295,8 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
     report_card.total_score = total_score
     report_card.total_possible_score = subject_count * 100
     report_card.average_percentage = average_percentage
+    report_card.overall_grade = overall_grade
+    report_card.overall_remark = overall_remark
     report_card.attendance_present = present
     report_card.attendance_absent = absent
     report_card.attendance_percentage = attendance_percentage
@@ -232,8 +310,8 @@ def generate_report_card(*, student: Student, term: Term, actor) -> ReportCard:
     report_card.save(
         update_fields=[
             "class_level", "class_arm", "total_score", "total_possible_score", "average_percentage",
-            "attendance_present", "attendance_absent", "attendance_percentage",
-            "status", "published_at", "generated_at", "updated_by", "updated_at",
+            "overall_grade", "overall_remark", "attendance_present", "attendance_absent",
+            "attendance_percentage", "status", "published_at", "generated_at", "updated_by", "updated_at",
         ]
     )
 
@@ -329,17 +407,24 @@ def verify_report_card(*, verification_code: str) -> ReportCard | None:
             deleted_at__isnull=True,
         )
         .select_related("student__school", "academic_year", "term", "class_level", "class_arm")
-        # Prefetch.queryset must also use all_tenants: the plain "subjects"
-        # relation goes through ReportCardSubject's default TenantManager,
-        # which would filter to an active org context that doesn't exist
-        # on this unauthenticated request and silently come back empty.
+        # Prefetch.queryset must also use all_tenants: the plain "subjects"/
+        # "psychomotor_ratings" relations go through their models' default
+        # TenantManager, which would filter to an active org context that
+        # doesn't exist on this unauthenticated request and silently come
+        # back empty.
         .prefetch_related(
             Prefetch(
                 "subjects",
                 queryset=ReportCardSubject.all_tenants.select_related("subject").order_by(
                     "subject__name"
                 ),
-            )
+            ),
+            Prefetch(
+                "psychomotor_ratings",
+                queryset=PsychomotorRating.all_tenants.select_related("trait").order_by(
+                    "trait__order", "trait__name"
+                ),
+            ),
         )
         .first()
     )

@@ -5,7 +5,16 @@ from apps.core.serializers import PublicIdRelatedField
 from apps.schools.models import School, Term
 from apps.students.models import Student
 
-from .models import ReportCard, ReportCardAudit, ReportCardBulkExport, ReportCardSubject, ReportCardWeighting
+from .models import (
+    PsychomotorRating,
+    PsychomotorTrait,
+    ReportCard,
+    ReportCardAudit,
+    ReportCardBulkExport,
+    ReportCardSubject,
+    ReportCardWeighting,
+)
+from .services.report_card_service import InvalidPsychomotorRating, set_psychomotor_ratings
 
 
 class ReportCardWeightingSerializer(serializers.ModelSerializer):
@@ -47,9 +56,33 @@ class ReportCardSubjectSerializer(serializers.ModelSerializer):
             "grade",
             "remark",
             "class_position",
+            "class_average",
             "teacher_comment",
         ]
         read_only_fields = [f for f in fields if f not in ("teacher_comment",)]
+
+
+class PsychomotorTraitSerializer(serializers.ModelSerializer):
+    school = PublicIdRelatedField(queryset=School.objects)
+
+    class Meta:
+        model = PsychomotorTrait
+        fields = ["public_id", "school", "name", "order"]
+
+
+class PsychomotorRatingSerializer(serializers.ModelSerializer):
+    # Nested writable under ReportCardSerializer (see its update() override)
+    # — a teacher submits {"trait": <public_id>, "rating": 1-5} per row;
+    # trait_name/rating_label are read-only display conveniences so a
+    # client doesn't have to cross-reference the traits list just to show
+    # what was submitted.
+    trait = PublicIdRelatedField(queryset=PsychomotorTrait.objects)
+    trait_name = serializers.CharField(source="trait.name", read_only=True)
+    rating_label = serializers.CharField(source="get_rating_display", read_only=True)
+
+    class Meta:
+        model = PsychomotorRating
+        fields = ["trait", "trait_name", "rating", "rating_label"]
 
 
 class ReportCardSerializer(serializers.ModelSerializer):
@@ -59,6 +92,11 @@ class ReportCardSerializer(serializers.ModelSerializer):
     class_level = PublicIdRelatedField(read_only=True)
     class_arm = PublicIdRelatedField(read_only=True)
     subjects = ReportCardSubjectSerializer(many=True, read_only=True)
+    # Writable, unlike every other nested/calculated field here — see
+    # update() below. A teacher submits the whole current set of ratings
+    # each time; anything the payload doesn't mention keeps its existing
+    # value (see set_psychomotor_ratings's own docstring).
+    psychomotor_ratings = PsychomotorRatingSerializer(many=True, required=False)
 
     class Meta:
         model = ReportCard
@@ -74,6 +112,8 @@ class ReportCardSerializer(serializers.ModelSerializer):
             "total_score",
             "total_possible_score",
             "average_percentage",
+            "overall_grade",
+            "overall_remark",
             "class_position",
             "class_size",
             "attendance_present",
@@ -89,14 +129,29 @@ class ReportCardSerializer(serializers.ModelSerializer):
             "pdf_generated_at",
             "pdf_error_message",
             "subjects",
+            "psychomotor_ratings",
         ]
         read_only_fields = [
             "student", "academic_year", "term", "class_level", "class_arm", "report_card_number",
             "verification_code", "total_score", "total_possible_score", "average_percentage",
-            "class_position", "class_size", "attendance_present", "attendance_absent",
-            "attendance_percentage", "status", "generated_at", "published_at", "pdf_status",
-            "pdf_generated_at", "pdf_error_message", "subjects",
+            "overall_grade", "overall_remark", "class_position", "class_size", "attendance_present",
+            "attendance_absent", "attendance_percentage", "status", "generated_at", "published_at",
+            "pdf_status", "pdf_generated_at", "pdf_error_message", "subjects",
         ]
+
+    def update(self, instance, validated_data):
+        ratings_data = validated_data.pop("psychomotor_ratings", None)
+        instance = super().update(instance, validated_data)
+        if ratings_data is not None:
+            ratings = {row["trait"].id: row["rating"] for row in ratings_data}
+            try:
+                set_psychomotor_ratings(
+                    report_card=instance, ratings=ratings, actor=self.context["request"].user
+                )
+            except InvalidPsychomotorRating as exc:
+                raise serializers.ValidationError({"psychomotor_ratings": str(exc)}) from exc
+            instance.refresh_from_db()
+        return instance
 
 
 class ReportCardAuditSerializer(serializers.ModelSerializer):
@@ -167,6 +222,7 @@ class ReportCardVerifySubjectSerializer(serializers.Serializer):
     percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
     grade = serializers.CharField()
     remark = serializers.CharField()
+    class_average = serializers.DecimalField(max_digits=6, decimal_places=2, allow_null=True)
 
 
 class ReportCardVerifySerializer(serializers.Serializer):
@@ -185,6 +241,8 @@ class ReportCardVerifySerializer(serializers.Serializer):
     total_score = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_possible_score = serializers.DecimalField(max_digits=10, decimal_places=2)
     average_percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
+    overall_grade = serializers.CharField()
+    overall_remark = serializers.CharField()
     class_position = serializers.IntegerField()
     class_size = serializers.IntegerField()
     attendance_percentage = serializers.DecimalField(max_digits=6, decimal_places=2)
@@ -192,6 +250,7 @@ class ReportCardVerifySerializer(serializers.Serializer):
     generated_at = serializers.DateTimeField()
     published_at = serializers.DateTimeField()
     subjects = ReportCardVerifySubjectSerializer(source="subjects.all", many=True)
+    psychomotor_ratings = PsychomotorRatingSerializer(source="psychomotor_ratings.all", many=True)
 
     def get_student_name(self, obj) -> str:
         return f"{obj.student.first_name} {obj.student.last_name}"
