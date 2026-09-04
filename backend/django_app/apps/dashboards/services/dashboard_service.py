@@ -8,6 +8,7 @@ choice and carries no list-view-scale cost.
 """
 import datetime
 
+from django.core.cache import cache
 from django.db.models import Count, Sum
 from django.utils import timezone
 
@@ -42,7 +43,24 @@ def get_summary(*, user) -> dict:
     if guardian is not None:
         return {"role": "guardian", **_guardian_summary(guardian)}
 
-    return {"role": "admin", **_admin_summary(user.organization)}
+    return {"role": "admin", **_cached_admin_summary(user.organization)}
+
+
+ADMIN_SUMMARY_CACHE_TTL_SECONDS = 60
+
+
+def _cached_admin_summary(organization) -> dict:
+    """The admin summary alone runs ~20 aggregate queries (see
+    _admin_summary below) — worth a short TTL cache since every admin
+    dashboard page view triggers this endpoint, and none of these numbers
+    need to be more real-time than "up to a minute old".
+    """
+    cache_key = f"dashboard:admin_summary:{organization.id}"
+    summary = cache.get(cache_key)
+    if summary is None:
+        summary = _admin_summary(organization)
+        cache.set(cache_key, summary, ADMIN_SUMMARY_CACHE_TTL_SECONDS)
+    return summary
 
 
 def _current_term(school):
