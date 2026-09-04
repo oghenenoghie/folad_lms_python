@@ -91,9 +91,17 @@ def test_notification_preferences_get_and_patch(api_client, organization, user_f
 
 
 @pytest.mark.django_db
-def test_message_send_and_mark_read(api_client, organization, user_factory):
-    user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
-    recipient = user_factory(organization=organization, email="b@example.com", password="s3cret-pass!")
+def test_message_send_and_mark_read(api_client, organization):
+    from apps.accounts.models import User
+
+    User.objects.create_user(
+        email="a@example.com", password="s3cret-pass!", first_name="Ada", last_name="Okafor",
+        organization=organization,
+    )
+    recipient = User.objects.create_user(
+        email="b@example.com", password="s3cret-pass!", first_name="Femi", last_name="Adeyemi",
+        organization=organization,
+    )
     _login(api_client, "a@example.com", "s3cret-pass!")
 
     sent = api_client.post(
@@ -102,13 +110,20 @@ def test_message_send_and_mark_read(api_client, organization, user_factory):
         format="json",
     )
     assert sent.status_code == 201
-    message_public_id = sent.json()["data"]["public_id"]
+    body = sent.json()["data"]
+    message_public_id = body["public_id"]
+    # sender/recipient are opaque public_ids with no accessible lookup
+    # endpoint to resolve them to a name — sender_name/recipient_name
+    # exist precisely so the inbox UI has something to display.
+    assert body["sender_name"] == "Ada Okafor"
+    assert body["recipient_name"] == "Femi Adeyemi"
 
     api_client.credentials()
     _login(api_client, "b@example.com", "s3cret-pass!")
     inbox = api_client.get("/api/v1/messages")
     assert inbox.status_code == 200
     assert len(inbox.json()["data"]["results"]) == 1
+    assert inbox.json()["data"]["results"][0]["sender_name"] == "Ada Okafor"
 
     marked = api_client.post(f"/api/v1/messages/{message_public_id}/read")
     assert marked.status_code == 200
