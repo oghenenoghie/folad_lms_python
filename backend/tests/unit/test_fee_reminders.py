@@ -43,6 +43,13 @@ def test_reminds_an_invoice_due_soon_and_notifies_student_and_guardian(
     assert all(n.notification_type == "fee_reminder" for n in notifications)
     assert all("due" in n.title.lower() for n in notifications)
 
+    # /my-fees/<id> is a student-only page — the guardian's notification
+    # must not link there (no fee-detail page exists for guardians yet).
+    student_notification = notifications.get(recipient=student_user)
+    guardian_notification = notifications.get(recipient=guardian_user)
+    assert student_notification.link_url == f"/my-fees/{invoice.public_id}"
+    assert guardian_notification.link_url == ""
+
 
 @pytest.mark.django_db
 def test_reminds_an_overdue_invoice_with_overdue_wording(

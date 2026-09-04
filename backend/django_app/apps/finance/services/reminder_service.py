@@ -45,6 +45,11 @@ def _notify_for_invoice(*, invoice: Invoice, outstanding_minor: int, today) -> i
         f"Invoice {invoice.invoice_number} for {invoice.student} has {amount} outstanding, "
         f"{'overdue since' if is_overdue else 'due'} {invoice.due_date}."
     )
+    # /my-fees/<id> is a student-only page (see MyInvoiceDetailPage's
+    # student_public_id check) — guardians have no fee-detail page of
+    # their own yet, so a guardian's notification carries no deep link
+    # rather than one that would 403/error for them.
+    student_user_id = invoice.student.user_id
     sent = 0
     for user_id in _recipient_user_ids(invoice):
         Notification.objects.create(
@@ -53,7 +58,7 @@ def _notify_for_invoice(*, invoice: Invoice, outstanding_minor: int, today) -> i
             notification_type="fee_reminder",
             title=title,
             body=body,
-            link_url=f"/my-fees/{invoice.public_id}",
+            link_url=f"/my-fees/{invoice.public_id}" if user_id == student_user_id else "",
             ref_type="invoice",
             ref_id=invoice.id,
         )
