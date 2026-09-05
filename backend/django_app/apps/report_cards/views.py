@@ -6,6 +6,7 @@ apps.examinations.Result's workflow transitions are dedicated APIView
 endpoints rather than a generic PATCH.
 """
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
@@ -19,8 +20,9 @@ from apps.core.generics import (
 )
 from apps.core.responses import envelope, error_envelope
 
-from .models import ReportCard, ReportCardAudit, ReportCardBulkExport, ReportCardWeighting
+from .models import PsychomotorTrait, ReportCard, ReportCardAudit, ReportCardBulkExport, ReportCardWeighting
 from .serializers import (
+    PsychomotorTraitSerializer,
     ReportCardAuditSerializer,
     ReportCardBulkExportRequestSerializer,
     ReportCardBulkExportSerializer,
@@ -69,6 +71,47 @@ class ReportCardWeightingDetailView(TenantRetrieveUpdateDestroyAPIView):
             "DELETE": "report_card_weightings.update",
         }[self.request.method]
         return [IsAuthenticated(), require_permission(code)()]
+
+
+class PsychomotorTraitListCreateView(TenantListCreateAPIView):
+    serializer_class = PsychomotorTraitSerializer
+
+    def get_queryset(self):
+        qs = PsychomotorTrait.objects.filter(deleted_at__isnull=True)
+        school_id = self.request.query_params.get("school_id")
+        if school_id:
+            qs = qs.filter(school__public_id=school_id)
+        return qs
+
+    def get_permissions(self):
+        code = "psychomotor_traits.create" if self.request.method == "POST" else "psychomotor_traits.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_create(self, serializer):
+        serializer.save(organization=serializer.validated_data["school"].organization)
+
+
+class PsychomotorTraitDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = PsychomotorTraitSerializer
+
+    def get_queryset(self):
+        return PsychomotorTrait.objects.filter(deleted_at__isnull=True)
+
+    def get_permissions(self):
+        code = {
+            "GET": "psychomotor_traits.view",
+            "PATCH": "psychomotor_traits.update",
+            "DELETE": "psychomotor_traits.update",
+        }[self.request.method]
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = timezone.now()
+        instance.updated_by = self.request.user
+        instance.save(update_fields=["deleted_at", "updated_by", "updated_at"])
 
 
 class ReportCardListView(TenantListAPIView):

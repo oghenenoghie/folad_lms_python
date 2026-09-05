@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    PsychomotorTraitDetailView,
+    PsychomotorTraitListCreateView,
     ReportCardAuditListView,
     ReportCardBulkExportDetailView,
     ReportCardBulkExportDownloadView,
@@ -29,6 +31,16 @@ urlpatterns = [
         "report-card-weightings/<uuid:public_id>",
         ReportCardWeightingDetailView.as_view(),
         name="report-card-weighting-detail",
+    ),
+    path(
+        "psychomotor-traits",
+        PsychomotorTraitListCreateView.as_view(),
+        name="psychomotor-trait-list-create",
+    ),
+    path(
+        "psychomotor-traits/<uuid:public_id>",
+        PsychomotorTraitDetailView.as_view(),
+        name="psychomotor-trait-detail",
     ),
     path("report-cards", ReportCardListView.as_view(), name="report-card-list"),
     path("report-cards/generate", ReportCardGenerateView.as_view(), name="report-card-generate"),
