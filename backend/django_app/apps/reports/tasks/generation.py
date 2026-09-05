@@ -11,12 +11,18 @@ from apps.core.storage import save_document
 from apps.reports.models import ReportRequest
 from apps.reports.services.exporters import CONTENT_TYPES, export_table
 from apps.reports.services.generators import generate_table
+from apps.tenancy.context import activate_organization
 
 _FILE_EXTENSIONS = {"csv": "csv", "xlsx": "xlsx", "pdf": "pdf"}
 
 
 @shared_task
-def generate_report(report_request_id: int) -> None:
+def generate_report(report_request_id: int, organization_id: int) -> None:
+    # A real (non-eager) worker gets a fresh DB connection with no
+    # app.current_org GUC set, so without this the RLS-scoped
+    # ReportRequest.objects lookup below always misses — same reasoning as
+    # apps.finance.tasks.reports.generate_receipt_pdf.
+    activate_organization(organization_id)
     try:
         report_request = ReportRequest.objects.get(id=report_request_id)
     except ReportRequest.DoesNotExist:
