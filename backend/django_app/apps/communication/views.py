@@ -143,7 +143,9 @@ class MessageListCreateView(TenantListCreateAPIView):
     def get_queryset(self):
         from django.db.models import Q
 
-        return Message.objects.filter(Q(sender=self.request.user) | Q(recipient=self.request.user))
+        return Message.objects.filter(
+            Q(sender=self.request.user) | Q(recipient=self.request.user)
+        ).select_related("sender", "recipient")
 
     def get_permissions(self):
         return [IsAuthenticated()]
