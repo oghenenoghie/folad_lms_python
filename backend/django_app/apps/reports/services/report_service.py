@@ -18,7 +18,7 @@ def request_report(
         created_by=actor,
         updated_by=actor,
     )
-    generate_report.delay(report_request.id)
+    generate_report.delay(report_request.id, school.organization_id)
     return report_request
 
 
