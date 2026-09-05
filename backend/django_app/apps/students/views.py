@@ -4,14 +4,17 @@ student to a different school would leave its denormalized `organization`
 stale (see models.py), so a transfer is a deliberate operation out of M4
 scope, same convention as apps.schools.views.
 """
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from apps.accounts.permissions import require_permission
 from apps.core.generics import TenantListCreateAPIView, TenantRetrieveUpdateDestroyAPIView
+from apps.core.responses import envelope, error_envelope
 
 from .models import Student
 from .serializers import StudentSerializer
-from .services import student_service
+from .services import bulk_import_service, student_service
 
 
 class StudentListCreateView(TenantListCreateAPIView):
@@ -53,3 +56,30 @@ class StudentDetailView(TenantRetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         student_service.delete_student(student=instance, actor=self.request.user)
+
+
+class StudentBulkImportView(APIView):
+    """A single CSV/XLSX upload creates many students in one request — see
+    apps.students.services.bulk_import_service for the row shape and
+    per-row partial-success behavior. Gated on the same permission as a
+    single create, since this is just many creates in one call.
+    """
+
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated, require_permission("students.create")]
+
+    def post(self, request):
+        file_obj = request.FILES.get("file")
+        if file_obj is None:
+            return error_envelope("a file is required", status=400)
+        if not file_obj.name.lower().endswith((".csv", ".xlsx")):
+            return error_envelope("only .csv and .xlsx files are supported", status=400)
+
+        rows = bulk_import_service.parse_rows(filename=file_obj.name, content=file_obj.read())
+        if not rows:
+            return error_envelope("the file has no data rows", status=400)
+
+        result = bulk_import_service.import_students(
+            organization=request.user.organization, actor=request.user, rows=rows
+        )
+        return envelope(result, message=f"{result['created']} of {len(rows)} row(s) imported")
