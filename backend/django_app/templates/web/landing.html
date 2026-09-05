@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load ui_tags %}
+{% block title %}Welcome{% endblock %}
+{% block content %}
+<div class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-10 px-4 py-16 text-center">
+  <div class="flex flex-col items-center gap-3">
+    {% ui_icon "school" "h-12 w-12 text-brand-600" %}
+    <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+      {{ site_name|default:"FOLAD KIDDIES SCHOOL" }}
+    </h1>
+    <p class="max-w-md text-sm text-slate-500 dark:text-slate-400">
+      The school's learning management system — attendance, results, fees, messages, and more, all in one place.
+    </p>
+  </div>
+
+  {% ui_button label="Go to dashboard" href=dashboard_url icon="arrow-right" %}
+
+  <div class="grid w-full grid-cols-1 gap-4 text-left sm:grid-cols-3">
+    {% ui_card title="Academics" %}
+      <div class="flex items-start gap-3">
+        {% ui_icon "graduation-cap" "h-5 w-5 shrink-0 text-brand-600" %}
+        <p class="text-sm text-slate-600 dark:text-slate-400">
+          Enrollment, attendance, examinations, and report cards for every student.
+        </p>
+      </div>
+    {% end_ui_card %}
+    {% ui_card title="People" %}
+      <div class="flex items-start gap-3">
+        {% ui_icon "users" "h-5 w-5 shrink-0 text-brand-600" %}
+        <p class="text-sm text-slate-600 dark:text-slate-400">
+          Staff, teachers, and guardians, all linked to the students they work with.
+        </p>
+      </div>
+    {% end_ui_card %}
+    {% ui_card title="Secure access" %}
+      <div class="flex items-start gap-3">
+        {% ui_icon "shield" "h-5 w-5 shrink-0 text-brand-600" %}
+        <p class="text-sm text-slate-600 dark:text-slate-400">
+          Role-based permissions and optional multi-factor authentication for every account.
+        </p>
+      </div>
+    {% end_ui_card %}
+  </div>
+</div>
+{% endblock %}
