@@ -9,6 +9,7 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.academics.models import ClassLevel, Subject
 from apps.accounts.permissions import require_permission
 from apps.core.generics import (
     TenantListAPIView,
@@ -17,16 +18,32 @@ from apps.core.generics import (
 )
 from apps.core.responses import envelope, error_envelope
 
-from .models import CBTMedia, Question, QuestionBlock, QuestionOption, QuestionVersion, Topic
+from .models import (
+    CBTExam,
+    CBTMedia,
+    ExamCandidate,
+    ExamQuestion,
+    ExamSection,
+    Question,
+    QuestionBlock,
+    QuestionOption,
+    QuestionVersion,
+    Topic,
+)
 from .serializers import (
+    CBTExamSerializer,
     CBTMediaSerializer,
+    ExamCandidateSerializer,
+    ExamQuestionSerializer,
+    ExamSectionSerializer,
     QuestionBlockSerializer,
     QuestionOptionSerializer,
     QuestionSerializer,
     QuestionVersionSerializer,
     TopicSerializer,
 )
-from .services import question_service
+from .services import exam_service, question_service
+from .services.exam_service import ExamError, InvalidExamTransition
 from .services.question_service import InvalidQuestionTransition, QuestionError
 
 
@@ -336,3 +353,327 @@ class CBTMediaDetailView(TenantRetrieveUpdateDestroyAPIView):
         instance.deleted_at = timezone.now()
         instance.updated_by = self.request.user
         instance.save(update_fields=["deleted_at", "updated_by", "updated_at"])
+
+
+class CBTExamListCreateView(TenantListCreateAPIView):
+    serializer_class = CBTExamSerializer
+
+    def get_queryset(self):
+        qs = CBTExam.objects.filter(deleted_at__isnull=True)
+        subject_id = self.request.query_params.get("subject_id")
+        class_level_id = self.request.query_params.get("class_level_id")
+        term_id = self.request.query_params.get("term_id")
+        status_filter = self.request.query_params.get("status")
+        exam_type = self.request.query_params.get("exam_type")
+        if subject_id:
+            qs = qs.filter(subject__public_id=subject_id)
+        if class_level_id:
+            qs = qs.filter(class_level__public_id=class_level_id)
+        if term_id:
+            qs = qs.filter(term__public_id=term_id)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if exam_type:
+            qs = qs.filter(exam_type=exam_type)
+        return qs
+
+    def get_permissions(self):
+        code = "cbt_exams.create" if self.request.method == "POST" else "cbt_exams.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def perform_create(self, serializer):
+        serializer.save(
+            organization=serializer.validated_data["school"].organization,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+
+class CBTExamDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = CBTExamSerializer
+
+    def get_queryset(self):
+        return CBTExam.objects.filter(deleted_at__isnull=True)
+
+    def get_permissions(self):
+        code = {
+            "GET": "cbt_exams.view",
+            "PATCH": "cbt_exams.update",
+            "DELETE": "cbt_exams.delete",
+        }[self.request.method]
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_update(self, serializer):
+        exam_service.update_exam(exam=serializer.instance, actor=self.request.user, **serializer.validated_data)
+
+    def perform_destroy(self, instance):
+        exam_service.delete_exam(exam=instance, actor=self.request.user)
+
+
+class _ExamTransitionView(APIView):
+    transition = staticmethod(lambda *, exam, actor: exam)
+    permission_code = "cbt_exams.publish"
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission(self.permission_code)()]
+
+    def post(self, request, public_id):
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        try:
+            exam = self.transition(exam=exam, actor=request.user)
+        except InvalidExamTransition as exc:
+            return error_envelope(str(exc), status=409)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(CBTExamSerializer(exam).data)
+
+
+class CBTExamPublishView(_ExamTransitionView):
+    transition = staticmethod(exam_service.publish_exam)
+
+
+class CBTExamArchiveView(_ExamTransitionView):
+    transition = staticmethod(exam_service.archive_exam)
+
+
+class ExamGenerateQuestionsView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_exams.update")()]
+
+    def post(self, request, public_id):
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        subject = generics.get_object_or_404(Subject.objects, public_id=request.data["subject"])
+        class_level = generics.get_object_or_404(ClassLevel.objects, public_id=request.data["class_level"])
+        topic = None
+        if request.data.get("topic"):
+            topic = generics.get_object_or_404(Topic.objects, public_id=request.data["topic"])
+        try:
+            created = exam_service.generate_questions_for_exam(
+                exam=exam,
+                subject=subject,
+                class_level=class_level,
+                topic=topic,
+                count=int(request.data["count"]),
+                difficulty_distribution=request.data.get("difficulty_distribution"),
+                question_types=request.data.get("question_types"),
+            )
+        except ExamError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(
+            ExamQuestionSerializer(created, many=True).data, message="questions generated", status=201
+        )
+
+
+class ExamSectionListCreateView(TenantListCreateAPIView):
+    serializer_class = ExamSectionSerializer
+
+    def get_exam(self) -> CBTExam:
+        return generics.get_object_or_404(CBTExam.objects, public_id=self.kwargs["public_id"])
+
+    def get_queryset(self):
+        return ExamSection.objects.filter(exam__public_id=self.kwargs["public_id"])
+
+    def get_permissions(self):
+        code = "cbt_exams.update" if self.request.method == "POST" else "cbt_exams.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_create(self, serializer):
+        exam = self.get_exam()
+        instance = exam_service.add_section(exam=exam, **serializer.validated_data)
+        serializer.instance = instance
+
+
+class ExamSectionDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = ExamSectionSerializer
+    lookup_url_kwarg = "section_public_id"
+
+    def get_queryset(self):
+        return ExamSection.objects.filter(exam__public_id=self.kwargs["public_id"])
+
+    def get_permissions(self):
+        code = "cbt_exams.update" if self.request.method in ("PATCH", "DELETE") else "cbt_exams.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_update(self, serializer):
+        exam_service.update_section(section=serializer.instance, **serializer.validated_data)
+
+    def perform_destroy(self, instance):
+        exam_service.remove_section(section=instance)
+
+
+class ExamQuestionListCreateView(TenantListCreateAPIView):
+    serializer_class = ExamQuestionSerializer
+
+    def get_exam(self) -> CBTExam:
+        return generics.get_object_or_404(CBTExam.objects, public_id=self.kwargs["public_id"])
+
+    def get_queryset(self):
+        return ExamQuestion.objects.filter(exam__public_id=self.kwargs["public_id"]).select_related("question")
+
+    def get_permissions(self):
+        code = "cbt_exams.update" if self.request.method == "POST" else "cbt_exams.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_create(self, serializer):
+        exam = self.get_exam()
+        instance = exam_service.add_question_to_exam(exam=exam, **serializer.validated_data)
+        serializer.instance = instance
+
+
+class ExamQuestionDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = ExamQuestionSerializer
+    lookup_url_kwarg = "exam_question_public_id"
+
+    def get_queryset(self):
+        return ExamQuestion.objects.filter(exam__public_id=self.kwargs["public_id"]).select_related("question")
+
+    def get_permissions(self):
+        code = "cbt_exams.update" if self.request.method in ("PATCH", "DELETE") else "cbt_exams.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_update(self, serializer):
+        exam_service.update_exam_question(exam_question=serializer.instance, **serializer.validated_data)
+
+    def perform_destroy(self, instance):
+        exam_service.remove_question_from_exam(exam_question=instance)
+
+
+class ExamQuestionReorderView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_exams.update")()]
+
+    def post(self, request, public_id):
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        try:
+            exam_service.reorder_exam_questions(
+                exam=exam, ordered_public_ids=request.data.get("ordered_public_ids", [])
+            )
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+        serializer = ExamQuestionSerializer(exam.exam_questions.select_related("question"), many=True)
+        return envelope(serializer.data)
+
+
+class ExamCandidateListCreateView(TenantListCreateAPIView):
+    serializer_class = ExamCandidateSerializer
+
+    def get_exam(self) -> CBTExam:
+        return generics.get_object_or_404(CBTExam.objects, public_id=self.kwargs["public_id"])
+
+    def get_queryset(self):
+        return ExamCandidate.objects.filter(exam__public_id=self.kwargs["public_id"]).select_related("student")
+
+    def get_permissions(self):
+        code = "cbt_exam_candidates.manage" if self.request.method == "POST" else "cbt_exam_candidates.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_create(self, serializer):
+        exam = self.get_exam()
+        instance = exam_service.add_candidate(exam=exam, student=serializer.validated_data["student"])
+        serializer.instance = instance
+
+
+class ExamCandidateDetailView(TenantRetrieveUpdateDestroyAPIView):
+    serializer_class = ExamCandidateSerializer
+    lookup_url_kwarg = "candidate_public_id"
+
+    def get_queryset(self):
+        return ExamCandidate.objects.filter(exam__public_id=self.kwargs["public_id"]).select_related("student")
+
+    def get_permissions(self):
+        code = "cbt_exam_candidates.manage" if self.request.method in ("PATCH", "DELETE") else "cbt_exam_candidates.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+
+    def perform_update(self, serializer):
+        exam_service.update_candidate(candidate=serializer.instance, **serializer.validated_data)
+
+    def perform_destroy(self, instance):
+        exam_service.remove_candidate(candidate=instance)
+
+
+class ExamCandidateBulkFromClassArmView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_exam_candidates.manage")()]
+
+    def post(self, request, public_id):
+        from apps.academics.models import ClassArm
+        from apps.schools.models import AcademicYear
+
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        class_arm = generics.get_object_or_404(ClassArm.objects, public_id=request.data["class_arm"])
+        academic_year = generics.get_object_or_404(AcademicYear.objects, public_id=request.data["academic_year"])
+        try:
+            candidates = exam_service.add_candidates_from_class_arm(
+                exam=exam, class_arm=class_arm, academic_year=academic_year
+            )
+        except ExamError as exc:
+            return error_envelope(str(exc), status=409)
+        return envelope(
+            ExamCandidateSerializer(candidates, many=True).data, message="candidates added", status=201
+        )

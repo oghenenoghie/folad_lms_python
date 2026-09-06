@@ -325,6 +325,66 @@ def cbt_fixture_set(organization, school_factory, campus_factory, class_level_fa
 
 
 @pytest.fixture
+def cbt_exam_factory(db):
+    from apps.cbt.models import CBTExam
+    from apps.tenancy.context import activate_organization
+
+    def make(
+        *,
+        school,
+        academic_year,
+        term,
+        subject,
+        class_level,
+        name="Term Test",
+        exam_type="test",
+        duration_minutes=60,
+        pass_mark="40.00",
+        start_at="2025-09-10T09:00:00Z",
+        end_at="2025-09-10T10:00:00Z",
+        **extra,
+    ):
+        activate_organization(school.organization_id)
+        return CBTExam.all_tenants.create(
+            organization=school.organization,
+            school=school,
+            academic_year=academic_year,
+            term=term,
+            subject=subject,
+            class_level=class_level,
+            name=name,
+            exam_type=exam_type,
+            duration_minutes=duration_minutes,
+            pass_mark=pass_mark,
+            start_at=start_at,
+            end_at=end_at,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def cbt_exam_fixture_set(
+    cbt_fixture_set, academic_year_factory, term_factory, class_arm_factory, cbt_exam_factory
+):
+    """cbt_fixture_set plus an academic year/term/class arm and one draft
+    exam — the minimal scaffolding apps.cbt exam tests need."""
+    fs = cbt_fixture_set
+    academic_year = academic_year_factory(school=fs["school"])
+    term = term_factory(academic_year=academic_year)
+    class_arm = class_arm_factory(class_level=fs["class_level"])
+    exam = cbt_exam_factory(
+        school=fs["school"],
+        academic_year=academic_year,
+        term=term,
+        subject=fs["subject"],
+        class_level=fs["class_level"],
+    )
+    return {**fs, "academic_year": academic_year, "term": term, "class_arm": class_arm, "exam": exam}
+
+
+@pytest.fixture
 def class_subject_factory(db):
     from apps.academics.models import ClassSubject
     from apps.tenancy.context import activate_organization

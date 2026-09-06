@@ -57,7 +57,7 @@ def validate_block_content(*, block_type: str, content: dict) -> None:
         raise QuestionError(f"{block_type} block content missing required key(s): {', '.join(missing)}")
 
 
-def _snapshot_content(question: Question) -> dict:
+def build_question_snapshot(question: Question) -> dict:
     """The full reconstructible state of a question: its own fields plus
     every block and option, in order — what a QuestionVersion or a
     duplicate needs to fully recreate the question elsewhere.
@@ -94,7 +94,7 @@ def _snapshot_question_version(question: Question) -> QuestionVersion:
         organization=question.organization,
         question=question,
         version_number=next_number,
-        content=_snapshot_content(question),
+        content=build_question_snapshot(question),
         created_by=question.updated_by,
         updated_by=question.updated_by,
     )

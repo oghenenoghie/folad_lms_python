@@ -1,9 +1,22 @@
 from django.urls import path
 
 from .views import (
+    CBTExamArchiveView,
+    CBTExamDetailView,
+    CBTExamListCreateView,
+    CBTExamPublishView,
     CBTMediaDetailView,
     CBTMediaListView,
     CBTMediaUploadView,
+    ExamCandidateBulkFromClassArmView,
+    ExamCandidateDetailView,
+    ExamCandidateListCreateView,
+    ExamGenerateQuestionsView,
+    ExamQuestionDetailView,
+    ExamQuestionListCreateView,
+    ExamQuestionReorderView,
+    ExamSectionDetailView,
+    ExamSectionListCreateView,
     QuestionApproveView,
     QuestionBlockDetailView,
     QuestionBlockListCreateView,
@@ -60,4 +73,53 @@ urlpatterns = [
     path("cbt/media", CBTMediaListView.as_view(), name="cbt-media-list"),
     path("cbt/media/upload", CBTMediaUploadView.as_view(), name="cbt-media-upload"),
     path("cbt/media/<uuid:public_id>", CBTMediaDetailView.as_view(), name="cbt-media-detail"),
+    path("cbt/exams", CBTExamListCreateView.as_view(), name="cbt-exam-list-create"),
+    path("cbt/exams/<uuid:public_id>", CBTExamDetailView.as_view(), name="cbt-exam-detail"),
+    path("cbt/exams/<uuid:public_id>/publish", CBTExamPublishView.as_view(), name="cbt-exam-publish"),
+    path("cbt/exams/<uuid:public_id>/archive", CBTExamArchiveView.as_view(), name="cbt-exam-archive"),
+    path(
+        "cbt/exams/<uuid:public_id>/generate-questions",
+        ExamGenerateQuestionsView.as_view(),
+        name="cbt-exam-generate-questions",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/sections",
+        ExamSectionListCreateView.as_view(),
+        name="cbt-exam-section-list-create",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/sections/<uuid:section_public_id>",
+        ExamSectionDetailView.as_view(),
+        name="cbt-exam-section-detail",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/questions",
+        ExamQuestionListCreateView.as_view(),
+        name="cbt-exam-question-list-create",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/questions/<uuid:exam_question_public_id>",
+        ExamQuestionDetailView.as_view(),
+        name="cbt-exam-question-detail",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/questions/reorder",
+        ExamQuestionReorderView.as_view(),
+        name="cbt-exam-question-reorder",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/candidates",
+        ExamCandidateListCreateView.as_view(),
+        name="cbt-exam-candidate-list-create",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/candidates/<uuid:candidate_public_id>",
+        ExamCandidateDetailView.as_view(),
+        name="cbt-exam-candidate-detail",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/candidates/from-class-arm",
+        ExamCandidateBulkFromClassArmView.as_view(),
+        name="cbt-exam-candidate-from-class-arm",
+    ),
 ]
