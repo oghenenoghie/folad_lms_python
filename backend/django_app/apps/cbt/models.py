@@ -578,6 +578,13 @@ class ExamAttempt(BaseModel):
     # ExamQuestion.order. See the module note above on why this is stored,
     # not recomputed.
     question_order = models.JSONField(default=list, blank=True)
+    # {exam_question public_id: [option label, ...]} — the per-question
+    # option display order, randomized once at start if
+    # exam.randomize_options, for every question type whose options are
+    # genuine on-screen choices (not the numeric/matching/ordering/hotspot
+    # types, whose "options" are an answer key with nothing to shuffle).
+    # Same never-recompute-per-request rule as question_order.
+    option_orders = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=ATTEMPT_STATUS_CHOICES, default="not_started")
     started_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)

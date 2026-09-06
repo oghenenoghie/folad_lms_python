@@ -77,16 +77,31 @@ def start_attempt(*, candidate, ip_address: str = "", user_agent: str = "") -> E
     if exam.randomize_questions:
         random.shuffle(order)
 
+    option_orders: dict[str, list[str]] = {}
+    if exam.randomize_options:
+        for eq in exam_questions:
+            snapshot = eq.snapshot
+            if not snapshot or snapshot["question_type"] in _ANSWER_KEY_IN_OPTIONS_TYPES:
+                continue  # nothing on-screen to shuffle — see that set's docstring
+            labels = [o["label"] for o in snapshot["options"]]
+            if len(labels) > 1:
+                random.shuffle(labels)
+                option_orders[str(eq.public_id)] = labels
+
     _transition(attempt=attempt, new_status="in_progress")
     attempt.started_at = now
     attempt.expires_at = now + timezone.timedelta(
         minutes=exam.duration_minutes + candidate.extra_time_minutes
     )
     attempt.question_order = order
+    attempt.option_orders = option_orders
     attempt.ip_address = ip_address or None
     attempt.user_agent = user_agent
     attempt.save(
-        update_fields=["status", "started_at", "expires_at", "question_order", "ip_address", "user_agent"]
+        update_fields=[
+            "status", "started_at", "expires_at", "question_order", "option_orders",
+            "ip_address", "user_agent",
+        ]
     )
     return attempt
 
@@ -210,12 +225,27 @@ def sanitize_snapshot_for_delivery(snapshot: dict) -> dict:
     }
 
 
+def _apply_option_order(options: list[dict], label_order: list[str] | None) -> list[dict]:
+    """Reorders an already-sanitized options list to match a stored
+    label_order (attempt.option_orders[exam_question]) — the display order
+    fixed once at start_attempt, never recomputed per request. Falls back
+    to the snapshot's own order when no stored order exists (randomize_options
+    was off, or this question type has nothing to shuffle).
+    """
+    if not label_order:
+        return options
+    by_label = {o["label"]: o for o in options}
+    return [by_label[label] for label in label_order if label in by_label]
+
+
 def build_delivery_payload(*, attempt: ExamAttempt) -> list[dict]:
     """The ordered, answer-key-stripped question content a candidate needs
     to actually take the exam. `attempt.question_order` (fixed once at
     start_attempt) drives both the sequence and which frozen
-    ExamQuestion.snapshot each entry uses, so a client can reconstruct the
-    exact same attempt after a refresh or reconnect.
+    ExamQuestion.snapshot each entry uses, and `attempt.option_orders`
+    (same fixed-once-at-start rule) drives each question's own option
+    display order, so a client can reconstruct the exact same attempt
+    after a refresh or reconnect.
     """
     exam_questions = {str(eq.public_id): eq for eq in attempt.exam.exam_questions.all()}
     existing_answers = {a.exam_question_id: a for a in attempt.answers.all()}
@@ -225,11 +255,13 @@ def build_delivery_payload(*, attempt: ExamAttempt) -> list[dict]:
         if exam_question is None:
             continue
         answer = existing_answers.get(exam_question.id)
+        sanitized = sanitize_snapshot_for_delivery(exam_question.snapshot)
+        sanitized["options"] = _apply_option_order(sanitized["options"], attempt.option_orders.get(public_id))
         payload.append(
             {
                 "exam_question": public_id,
                 "marks": str(exam_question.marks),
-                "snapshot": sanitize_snapshot_for_delivery(exam_question.snapshot),
+                "snapshot": sanitized,
                 "response": answer.response if answer else None,
                 "flagged": answer.flagged if answer else False,
             }
