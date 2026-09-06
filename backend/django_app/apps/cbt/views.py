@@ -197,6 +197,51 @@ class QuestionDuplicateView(APIView):
         return envelope(QuestionSerializer(copy).data, message="question duplicated", status=201)
 
 
+class QuestionBulkImportView(APIView):
+    """Multipart CSV upload — one Question per row (single_choice/
+    multiple_choice/true_false only; see question_service.
+    bulk_import_questions for the exact column shape and why richer
+    block/option content is out of scope for a flat CSV). A bad row is
+    reported, not fatal to the rest of the sheet.
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_questions.create")()]
+
+    def post(self, request):
+        import csv
+        import io
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return error_envelope("no file provided", status=400)
+        subject = generics.get_object_or_404(Subject.objects, public_id=request.data.get("subject"))
+        class_level = generics.get_object_or_404(ClassLevel.objects, public_id=request.data.get("class_level"))
+        try:
+            text = upload.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return error_envelope("file must be UTF-8 encoded CSV", status=400)
+
+        rows = list(csv.DictReader(io.StringIO(text)))
+        result = question_service.bulk_import_questions(
+            organization=request.user.organization,
+            actor=request.user,
+            subject=subject,
+            class_level=class_level,
+            rows=rows,
+        )
+        return envelope(
+            {
+                "created": QuestionSerializer(result["created"], many=True).data,
+                "errors": result["errors"],
+                "created_count": len(result["created"]),
+                "error_count": len(result["errors"]),
+            },
+            message="bulk import completed",
+            status=201 if result["created"] else 200,
+        )
+
+
 class QuestionVersionListView(TenantListAPIView):
     """GET only — versions are written exclusively by question_service on
     edit-after-publish, never created directly by a client."""
