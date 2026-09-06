@@ -1,15 +1,16 @@
 from django.contrib import admin
 from django.urls import include, path
-from django.views.generic import RedirectView
 
 from apps.core.views import HealthView
+from apps.web.views.marketing import LandingView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # Bare domain root has no content of its own — the server-rendered UI
-    # lives under /app/ (see below), which itself redirects to /app/login
-    # for a signed-out visitor via LoginRequiredMixin.
-    path("", RedirectView.as_view(pattern_name="web:home", permanent=False)),
+    # Public landing page — the server-rendered UI itself lives under
+    # /app/ (see below) and is session-gated (LoginRequiredMixin), so a
+    # signed-out visitor hitting "/" needs something to actually render
+    # rather than bouncing straight to /app/login.
+    path("", LandingView.as_view(), name="landing"),
     # Railway healthcheck target (railway.toml). Same liveness probe as
     # /api/v1/health, kept under both paths since the latter is the
     # versioned API surface and the former is the deployment-platform

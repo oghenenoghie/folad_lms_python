@@ -17,6 +17,8 @@ cached in-process — consistent with WhiteNoise already serving every
 other static asset from disk, and avoids shipping a JS bundle just for
 icons.
 """
+
+import re
 from functools import lru_cache
 
 from django import template
@@ -25,6 +27,13 @@ from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 
 register = template.Library()
+
+# The vendored source (`<svg\n  class="lucide ...">`) puts a newline, not a
+# space, right after the tag name, so a literal "<svg " substring never
+# matched it — every ui_icon() call silently ignored css_class. Matches
+# "<svg" followed by any whitespace, without consuming it, so this works
+# regardless of the vendored file's exact formatting.
+_SVG_OPEN_TAG = re.compile(r"<svg(?=\s)")
 
 _LUCIDE_DIR = settings.DJANGO_APP_DIR / "static" / "vendor" / "lucide"
 
@@ -42,7 +51,7 @@ def ui_icon(name: str, css_class: str = "h-5 w-5") -> str:
     svg = _load_icon_svg(name)
     if not svg:
         return ""
-    svg = svg.replace("<svg ", f'<svg class="{css_class}" ', 1)
+    svg = _SVG_OPEN_TAG.sub(f'<svg class="{css_class}"', svg, count=1)
     return mark_safe(svg)
 
 
