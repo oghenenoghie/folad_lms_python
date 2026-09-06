@@ -50,7 +50,7 @@ from .serializers import (
     StudentAnswerSerializer,
     TopicSerializer,
 )
-from .services import attempt_service, exam_service, question_service
+from .services import analytics_service, attempt_service, exam_service, question_service
 from .services.attempt_service import AttemptError, InvalidAttemptTransition
 from .services.exam_service import ExamError, InvalidExamTransition
 from .services.question_service import InvalidQuestionTransition, QuestionError
@@ -482,6 +482,28 @@ class ExamGenerateQuestionsView(APIView):
             return error_envelope(str(exc), status=400)
         return envelope(
             ExamQuestionSerializer(created, many=True).data, message="questions generated", status=201
+        )
+
+
+class ExamAnalyticsView(APIView):
+    """Staff-facing: exam-wide summary stats plus per-question item
+    analysis (facility/discrimination index), computed only over
+    finalized attempts — see analytics_service's module docstring. Gated
+    on the same permission as viewing the exam itself: this is a read-only
+    report about an exam a caller can already see, not a distinct
+    capability worth its own permission code.
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_exams.view")()]
+
+    def get(self, request, public_id):
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        return envelope(
+            {
+                "summary": analytics_service.exam_summary(exam=exam),
+                "items": analytics_service.item_analysis(exam=exam),
+            }
         )
 
 
