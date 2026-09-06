@@ -330,3 +330,52 @@ def test_staff_detail_includes_events(api_client, organization, user_factory, re
     events = detail.json()["data"]["events"]
     assert len(events) == 1
     assert events[0]["event_type"] == "tab_hidden"
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_shows_own_candidacy_with_exam_summary_and_no_attempt_yet(api_client, ready_exam):
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200, resp.json()
+    results = resp.json()["data"]["results"]
+    assert len(results) == 1
+
+    row = results[0]
+    assert row["public_id"] == str(ready_exam["candidate"].public_id)
+    assert row["exam"]["public_id"] == str(ready_exam["exam"].public_id)
+    assert row["exam"]["name"] == ready_exam["exam"].name
+    assert row["exam"]["subject"] == ready_exam["subject"].name
+    assert row["attempt"] is None
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_includes_attempt_once_started(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    start_attempt(candidate=ready_exam["candidate"])
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    row = resp.json()["data"]["results"][0]
+    assert row["attempt"] is not None
+    assert row["attempt"]["status"] == "in_progress"
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_never_shows_another_students_candidacy(api_client, ready_exam):
+    _login(api_client, "other@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_returns_empty_for_a_non_student_account(api_client, organization, user_factory, ready_exam):
+    staff = user_factory(organization=organization, email="staffonly2@example.com", password="s3cret-pass!")
+    _login(api_client, "staffonly2@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["results"] == []

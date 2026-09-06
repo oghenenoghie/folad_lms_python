@@ -43,6 +43,7 @@ from .serializers import (
     ExamCandidateSerializer,
     ExamQuestionSerializer,
     ExamSectionSerializer,
+    MyExamCandidateSerializer,
     QuestionBlockSerializer,
     QuestionOptionSerializer,
     QuestionSerializer,
@@ -802,6 +803,27 @@ def _own_attempt_or_error(request, public_id):
         ExamAttempt.objects.select_related("exam", "candidate"), public_id=public_id, candidate__student=student
     )
     return attempt, None
+
+
+class MyCandidateListView(TenantListAPIView):
+    """Self-service: which CBT exams am I a candidate for. Ownership-
+    scoped, not RBAC-gated, like every other cbt/my/... endpoint — only
+    the student themselves should ever see their own candidacies. A
+    caller with no student profile (staff/admin/guardian) gets an empty
+    list rather than an error, matching apps.dashboards' own self-service
+    "my-..." endpoints.
+    """
+
+    serializer_class = MyExamCandidateSerializer
+
+    def get_permissions(self):
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        student = getattr(self.request.user, "student_profile", None)
+        if student is None:
+            return ExamCandidate.objects.none()
+        return ExamCandidate.objects.filter(student=student).select_related("exam__subject", "attempt")
 
 
 class AttemptStartView(APIView):
