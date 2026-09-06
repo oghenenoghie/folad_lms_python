@@ -46,6 +46,32 @@ class InvalidReportCardTransition(Exception):
     """A publish/unpublish/archive call not valid from the current status."""
 
 
+def visible_report_cards_for(user, queryset, *, student_field: str = "student"):
+    """Narrows `queryset` to what `user` may see, on top of the
+    `report_cards.view` RBAC check the view already runs. `student_field`
+    names the lookup path from `queryset`'s model to Student — "student"
+    for a ReportCard queryset itself, "report_card__student" for
+    ReportCardAudit (reached via its `report_card` FK).
+
+    `report_cards.view` is a flat, org-wide permission (§8 ARCHITECTURE.md's
+    RBAC has no per-object scoping), which is correct for staff/teacher/
+    admin roles managing the whole school's report cards. But a student or
+    guardian account holding that same permission code has no business
+    seeing another family's grades — so here, a request from a user with a
+    linked student_profile or guardian_profile is restricted to their own
+    (or their own children's) report cards specifically, regardless of
+    what `student_id`/`report_card_id` the request asks for. A staff/
+    teacher/admin user has neither profile and passes through unrestricted.
+    """
+    student = getattr(user, "student_profile", None)
+    if student is not None:
+        return queryset.filter(**{student_field: student})
+    guardian = getattr(user, "guardian_profile", None)
+    if guardian is not None:
+        return queryset.filter(**{f"{student_field}__guardian_links__guardian": guardian})
+    return queryset
+
+
 def get_or_create_weighting(*, school) -> ReportCardWeighting:
     weighting, _ = ReportCardWeighting.objects.get_or_create(
         school=school, defaults={"organization": school.organization}
