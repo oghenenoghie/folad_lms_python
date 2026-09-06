@@ -15,6 +15,7 @@ from .views import (
     CBTMediaDetailView,
     CBTMediaListView,
     CBTMediaUploadView,
+    ExamAnalyticsView,
     ExamAttemptDetailView,
     ExamAttemptListView,
     ExamCandidateBulkFromClassArmView,
@@ -92,6 +93,7 @@ urlpatterns = [
         ExamGenerateQuestionsView.as_view(),
         name="cbt-exam-generate-questions",
     ),
+    path("cbt/exams/<uuid:public_id>/analytics", ExamAnalyticsView.as_view(), name="cbt-exam-analytics"),
     path(
         "cbt/exams/<uuid:public_id>/sections",
         ExamSectionListCreateView.as_view(),
