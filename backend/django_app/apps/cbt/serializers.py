@@ -3,8 +3,21 @@ from rest_framework import serializers
 from apps.academics.models import ClassLevel, Subject
 from apps.core.serializers import PublicIdRelatedField
 from apps.core.storage import get_presigned_download_url
+from apps.schools.models import AcademicYear, School, Term
+from apps.students.models import Student
 
-from .models import CBTMedia, Question, QuestionBlock, QuestionOption, QuestionVersion, Topic
+from .models import (
+    CBTExam,
+    CBTMedia,
+    ExamCandidate,
+    ExamQuestion,
+    ExamSection,
+    Question,
+    QuestionBlock,
+    QuestionOption,
+    QuestionVersion,
+    Topic,
+)
 
 
 class TopicSerializer(serializers.ModelSerializer):
@@ -107,3 +120,91 @@ class CBTMediaSerializer(serializers.ModelSerializer):
 
     def get_download_url(self, obj: CBTMedia) -> str:
         return get_presigned_download_url(obj.storage_key)
+
+
+class CBTExamSerializer(serializers.ModelSerializer):
+    school = PublicIdRelatedField(queryset=School.objects)
+    academic_year = PublicIdRelatedField(queryset=AcademicYear.objects)
+    term = PublicIdRelatedField(queryset=Term.objects)
+    subject = PublicIdRelatedField(queryset=Subject.objects)
+    class_level = PublicIdRelatedField(queryset=ClassLevel.objects)
+    code = serializers.CharField(read_only=True)
+    total_marks = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
+    status = serializers.CharField(read_only=True)
+    published_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = CBTExam
+        fields = [
+            "public_id",
+            "code",
+            "school",
+            "academic_year",
+            "term",
+            "subject",
+            "class_level",
+            "name",
+            "exam_type",
+            "duration_minutes",
+            "total_marks",
+            "pass_mark",
+            "instructions",
+            "randomize_questions",
+            "randomize_options",
+            "allow_resume",
+            "negative_marking",
+            "status",
+            "start_at",
+            "end_at",
+            "published_at",
+            "created_at",
+        ]
+
+
+class ExamSectionSerializer(serializers.ModelSerializer):
+    exam = PublicIdRelatedField(read_only=True)
+
+    class Meta:
+        model = ExamSection
+        fields = ["public_id", "exam", "name", "instructions", "order", "marks"]
+
+
+class ExamQuestionSerializer(serializers.ModelSerializer):
+    exam = PublicIdRelatedField(read_only=True)
+    question = PublicIdRelatedField(queryset=Question.objects)
+    section = PublicIdRelatedField(queryset=ExamSection.objects, required=False, allow_null=True)
+    snapshot = serializers.JSONField(read_only=True)
+    effective_marks = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExamQuestion
+        fields = [
+            "public_id",
+            "exam",
+            "question",
+            "section",
+            "order",
+            "marks_override",
+            "effective_marks",
+            "snapshot",
+        ]
+
+    def get_effective_marks(self, obj: ExamQuestion) -> str:
+        return str(obj.marks)
+
+
+class ExamCandidateSerializer(serializers.ModelSerializer):
+    exam = PublicIdRelatedField(read_only=True)
+    student = PublicIdRelatedField(queryset=Student.objects)
+    candidate_number = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ExamCandidate
+        fields = [
+            "public_id",
+            "exam",
+            "student",
+            "candidate_number",
+            "extra_time_minutes",
+            "is_eligible",
+        ]

@@ -315,3 +315,209 @@ class CBTMedia(BaseModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: exams — assembling published/approved bank questions into a
+# deliverable examination. A CBTExam intentionally does NOT create or
+# reference an apps.examinations.Assessment here: that linkage (so a
+# finished attempt's score flows into the existing Result/report-card
+# pipeline) only makes sense once a specific student's specific enrollment
+# resolves to a specific ClassSubject, which is Phase 4's (ExamAttempt)
+# concern, not exam authoring's.
+# ---------------------------------------------------------------------------
+
+EXAM_TYPE_CHOICES = [
+    ("ca", "Continuous Assessment"),
+    ("test", "Test"),
+    ("quiz", "Quiz"),
+    ("midterm", "Mid-Term"),
+    ("terminal", "Terminal"),
+    ("mock", "Mock"),
+    ("entrance", "Entrance"),
+    ("promotion", "Promotion"),
+]
+
+# scheduled/open/closed/marking describe the exam's *delivery* lifecycle —
+# derived from start_at/end_at and attempt activity once Phase 4
+# (ExamAttempt) exists to drive them. Phase 3's exam_service only ever
+# moves an exam between draft, published and archived; the other four are
+# declared now so the column doesn't need a migration when Phase 4 starts
+# setting them.
+EXAM_STATUS_CHOICES = [
+    ("draft", "Draft"),
+    ("scheduled", "Scheduled"),
+    ("open", "Open"),
+    ("closed", "Closed"),
+    ("marking", "Marking"),
+    ("published", "Published"),
+    ("archived", "Archived"),
+]
+
+EXAM_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"published"},
+    "published": {"archived"},
+    "archived": set(),
+}
+
+# An exam may only draw on questions a reviewer has already vetted — see
+# exam_service.add_question_to_exam.
+EXAM_ELIGIBLE_QUESTION_STATUSES = {"approved", "published"}
+
+
+class CBTExam(BaseModel):
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    school = models.ForeignKey("schools.School", on_delete=models.PROTECT, related_name="cbt_exams")
+    academic_year = models.ForeignKey(
+        "schools.AcademicYear", on_delete=models.PROTECT, related_name="cbt_exams"
+    )
+    term = models.ForeignKey("schools.Term", on_delete=models.PROTECT, related_name="cbt_exams")
+    subject = models.ForeignKey("academics.Subject", on_delete=models.PROTECT, related_name="cbt_exams")
+    class_level = models.ForeignKey(
+        "academics.ClassLevel", on_delete=models.PROTECT, related_name="cbt_exams"
+    )
+    name = models.CharField(max_length=255)
+    # Auto-generated on first save (e.g. "CBT-000012") — see save() below.
+    code = models.CharField(max_length=50, blank=True)
+    exam_type = models.CharField(max_length=30, choices=EXAM_TYPE_CHOICES)
+    duration_minutes = models.PositiveIntegerField()
+    # Derived at publish time from the sum of every ExamQuestion's
+    # effective marks (marks_override or the question's own bank marks) —
+    # never hand-entered, so it can never drift from what the exam
+    # actually contains. 0 until then.
+    total_marks = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    pass_mark = models.DecimalField(max_digits=8, decimal_places=2)
+    instructions = models.JSONField(default=dict, blank=True)
+    randomize_questions = models.BooleanField(default=True)
+    randomize_options = models.BooleanField(default=True)
+    allow_resume = models.BooleanField(default=True)
+    negative_marking = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=EXAM_STATUS_CHOICES, default="draft")
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam"
+        constraints = [models.UniqueConstraint(fields=["organization", "code"], name="uq_cbt_exam_org_code")]
+        ordering = ["-start_at"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from apps.core.codegen import next_sequence_code
+
+            self.code = next_sequence_code(
+                queryset=CBTExam.all_tenants.filter(organization_id=self.organization_id),
+                field_name="code",
+                prefix="CBT-",
+                width=6,
+            )
+        super().save(*args, **kwargs)
+
+
+class ExamSection(BaseModel):
+    """An optional named grouping of an exam's questions (e.g. "Section A —
+    Objective"). An exam with no sections is a single flat question list —
+    ExamQuestion.section is nullable for exactly that case.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    exam = models.ForeignKey(CBTExam, on_delete=models.CASCADE, related_name="sections")
+    name = models.CharField(max_length=150)
+    instructions = models.JSONField(default=dict, blank=True)
+    order = models.PositiveIntegerField()
+    # The section's advertised/target marks (e.g. "20 marks" on a printed
+    # instruction sheet) — independent of, and not cross-validated against,
+    # the sum of its questions' actual marks.
+    marks = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam_section"
+        constraints = [
+            models.UniqueConstraint(fields=["exam", "order"], name="uq_cbt_exam_section_exam_order")
+        ]
+        ordering = ["exam", "order"]
+
+    def __str__(self) -> str:
+        return f"{self.exam} - {self.name}"
+
+
+class ExamQuestion(BaseModel):
+    """The join between an exam and a bank Question, plus (once published)
+    an immutable snapshot of that question's full content — see the module
+    docstring on QuestionVersion for why: the live question bank can keep
+    evolving after this exam ships without ever changing what this exam
+    actually delivered.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    exam = models.ForeignKey(CBTExam, on_delete=models.CASCADE, related_name="exam_questions")
+    section = models.ForeignKey(
+        ExamSection, null=True, blank=True, on_delete=models.SET_NULL, related_name="exam_questions"
+    )
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="exam_questions")
+    order = models.PositiveIntegerField()
+    marks_override = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    # Empty until the exam is published — see exam_service.publish_exam.
+    snapshot = models.JSONField(default=dict, blank=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam_question"
+        constraints = [
+            models.UniqueConstraint(fields=["exam", "question"], name="uq_cbt_exam_question_exam_question"),
+            models.UniqueConstraint(fields=["exam", "order"], name="uq_cbt_exam_question_exam_order"),
+        ]
+        ordering = ["exam", "order"]
+
+    def __str__(self) -> str:
+        return f"{self.exam} - {self.question}"
+
+    @property
+    def marks(self):
+        return self.marks_override if self.marks_override is not None else self.question.marks
+
+
+class ExamCandidate(BaseModel):
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    exam = models.ForeignKey(CBTExam, on_delete=models.CASCADE, related_name="candidates")
+    student = models.ForeignKey("students.Student", on_delete=models.PROTECT, related_name="cbt_candidacies")
+    candidate_number = models.CharField(max_length=50, blank=True)
+    extra_time_minutes = models.PositiveIntegerField(default=0)
+    is_eligible = models.BooleanField(default=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam_candidate"
+        constraints = [
+            models.UniqueConstraint(fields=["exam", "student"], name="uq_cbt_exam_candidate_exam_student")
+        ]
+        ordering = ["exam", "candidate_number"]
+
+    def __str__(self) -> str:
+        return f"{self.exam} - {self.student}"
+
+    def save(self, *args, **kwargs):
+        if not self.candidate_number:
+            from apps.core.codegen import next_sequence_code
+
+            self.candidate_number = next_sequence_code(
+                queryset=ExamCandidate.all_tenants.filter(exam_id=self.exam_id),
+                field_name="candidate_number",
+                prefix=f"{self.exam.code}-",
+                width=4,
+            )
+        super().save(*args, **kwargs)
