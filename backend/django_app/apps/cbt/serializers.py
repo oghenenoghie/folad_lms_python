@@ -213,6 +213,55 @@ class ExamCandidateSerializer(serializers.ModelSerializer):
         ]
 
 
+class MyExamCandidateSerializer(serializers.ModelSerializer):
+    """Self-service: what a student needs to see their own CBT exams and
+    decide whether to Start/Resume/view a result — a compact exam summary
+    and their own attempt status inlined, since a student has no
+    permission to GET the exam or attempt detail endpoints directly
+    (those are staff-only). See MyCandidateListView.
+    """
+
+    exam = serializers.SerializerMethodField()
+    attempt = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExamCandidate
+        fields = ["public_id", "exam", "candidate_number", "extra_time_minutes", "is_eligible", "attempt"]
+
+    def get_exam(self, obj: ExamCandidate) -> dict:
+        exam = obj.exam
+        return {
+            "public_id": str(exam.public_id),
+            "code": exam.code,
+            "name": exam.name,
+            "exam_type": exam.exam_type,
+            "status": exam.status,
+            "subject": exam.subject.name,
+            "duration_minutes": exam.duration_minutes,
+            "total_marks": str(exam.total_marks),
+            "pass_mark": str(exam.pass_mark),
+            "instructions": exam.instructions,
+            "start_at": exam.start_at,
+            "end_at": exam.end_at,
+        }
+
+    def get_attempt(self, obj: ExamCandidate) -> dict | None:
+        attempt = getattr(obj, "attempt", None)
+        if attempt is None:
+            return None
+        return {
+            "public_id": str(attempt.public_id),
+            "status": attempt.status,
+            "started_at": attempt.started_at,
+            "submitted_at": attempt.submitted_at,
+            "expires_at": attempt.expires_at,
+            "score": str(attempt.score),
+            "percentage": str(attempt.percentage),
+            "grade": attempt.grade,
+            "passed": attempt.passed,
+        }
+
+
 class ExamAttemptSerializer(serializers.ModelSerializer):
     """Read-only end to end — every field here is written exclusively by
     apps.cbt.services.attempt_service (start/heartbeat/submit/finalize),

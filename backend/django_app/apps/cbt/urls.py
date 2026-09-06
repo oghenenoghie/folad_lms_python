@@ -28,6 +28,7 @@ from .views import (
     ExamQuestionReorderView,
     ExamSectionDetailView,
     ExamSectionListCreateView,
+    MyCandidateListView,
     QuestionApproveView,
     QuestionBlockDetailView,
     QuestionBlockListCreateView,
@@ -153,6 +154,7 @@ urlpatterns = [
         StudentAnswerGradeView.as_view(),
         name="cbt-answer-grade",
     ),
+    path("cbt/my/candidates", MyCandidateListView.as_view(), name="cbt-my-candidate-list"),
     path(
         "cbt/my/candidates/<uuid:candidate_public_id>/start-attempt",
         AttemptStartView.as_view(),
