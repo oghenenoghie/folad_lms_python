@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     AttemptAnswerView,
     AttemptDetailView,
+    AttemptEventView,
     AttemptFlagView,
     AttemptHeartbeatView,
     AttemptStartView,
@@ -163,6 +164,11 @@ urlpatterns = [
         name="cbt-my-attempt-answer",
     ),
     path("cbt/my/attempts/<uuid:public_id>/flag", AttemptFlagView.as_view(), name="cbt-my-attempt-flag"),
+    path(
+        "cbt/my/attempts/<uuid:public_id>/events",
+        AttemptEventView.as_view(),
+        name="cbt-my-attempt-event",
+    ),
     path(
         "cbt/my/attempts/<uuid:public_id>/submit",
         AttemptSubmitView.as_view(),

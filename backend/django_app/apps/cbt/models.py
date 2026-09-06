@@ -598,6 +598,12 @@ class ExamAttempt(BaseModel):
     passed = models.BooleanField(default=False)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True, default="")
+    # Set once, automatically, by attempt_service.log_attempt_event once
+    # this attempt's count of SUSPICIOUS_EVENT_TYPES crosses
+    # AUTO_FLAG_THRESHOLD — a monotonic signal for a human reviewer to
+    # look at, never cleared automatically (and not yet clearable at all;
+    # that's a staff-review workflow for a later phase).
+    flagged_for_review = models.BooleanField(default=False)
 
     objects = TenantManager()
     all_tenants = models.Manager()
@@ -646,3 +652,43 @@ class StudentAnswer(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.attempt} - {self.exam_question}"
+
+
+EVENT_TYPE_CHOICES = [
+    ("tab_hidden", "Tab Hidden"),
+    ("tab_visible", "Tab Visible"),
+    ("fullscreen_exit", "Fullscreen Exit"),
+    ("fullscreen_enter", "Fullscreen Enter"),
+    ("window_blur", "Window Blur"),
+    ("window_focus", "Window Focus"),
+    ("copy_attempt", "Copy Attempted"),
+    ("paste_attempt", "Paste Attempted"),
+    ("right_click", "Right-Click Attempted"),
+    ("disconnect", "Connection Lost"),
+    ("reconnect", "Reconnected"),
+]
+
+
+class ExamAttemptEvent(BaseModel):
+    """An append-only proctoring signal reported by the candidate's client
+    during a live attempt (visibility/fullscreen/focus changes, copy/paste,
+    right-click, connectivity) — see attempt_service.log_attempt_event for
+    which of these count toward auto-flagging ExamAttempt.flagged_for_review.
+    Never mutated or deleted once written; a full record of what happened
+    during the attempt, for a human reviewer to look at later.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    attempt = models.ForeignKey(ExamAttempt, on_delete=models.CASCADE, related_name="events")
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam_attempt_event"
+        ordering = ["attempt", "created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.attempt} - {self.event_type}"

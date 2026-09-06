@@ -10,6 +10,7 @@ from .models import (
     CBTExam,
     CBTMedia,
     ExamAttempt,
+    ExamAttemptEvent,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -236,6 +237,7 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
             "percentage",
             "grade",
             "passed",
+            "flagged_for_review",
             "created_at",
         ]
         read_only_fields = fields
@@ -263,3 +265,16 @@ class StudentAnswerSerializer(serializers.ModelSerializer):
             "answered_at",
         ]
         read_only_fields = fields
+
+
+class ExamAttemptEventSerializer(serializers.ModelSerializer):
+    """`event_type` is write-once-per-row (a client reports what happened;
+    nothing about a logged event is ever edited), so this is writable only
+    through AttemptEventView.post → attempt_service.log_attempt_event."""
+
+    attempt = PublicIdRelatedField(read_only=True)
+
+    class Meta:
+        model = ExamAttemptEvent
+        fields = ["public_id", "attempt", "event_type", "metadata", "created_at"]
+        read_only_fields = ["public_id", "attempt", "created_at"]

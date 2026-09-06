@@ -256,3 +256,77 @@ def test_staff_grade_requires_permission_and_finalizes_result(
 
     result = Result.objects.get(student=student)
     assert result.score == Decimal("10.00")
+
+
+@pytest.mark.django_db
+def test_student_can_log_events_via_api_and_it_auto_flags_after_threshold(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import AUTO_FLAG_THRESHOLD
+
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    for _ in range(AUTO_FLAG_THRESHOLD):
+        resp = api_client.post(
+            f"/api/v1/cbt/my/attempts/{attempt_public_id}/events",
+            {"event_type": "fullscreen_exit", "metadata": {"reason": "test"}},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.json()
+
+    detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt_public_id}")
+    assert detail.json()["data"]["attempt"]["flagged_for_review"] is True
+
+
+@pytest.mark.django_db
+def test_cannot_log_an_event_on_another_students_attempt(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    attempt = start_attempt(candidate=candidate)
+    _login(api_client, "other@example.com", "s3cret-pass!")
+
+    resp = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/events",
+        {"event_type": "tab_hidden"},
+        format="json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_invalid_event_type_is_rejected(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    resp = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/events",
+        {"event_type": "not_a_real_event"},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_staff_detail_includes_events(api_client, organization, user_factory, ready_exam):
+    from apps.cbt.services.attempt_service import log_attempt_event, start_attempt
+
+    exam = ready_exam["exam"]
+    candidate = ready_exam["candidate"]
+    attempt = start_attempt(candidate=candidate)
+    log_attempt_event(attempt=attempt, event_type="tab_hidden")
+
+    staff = user_factory(organization=organization, email="staff3@example.com", password="s3cret-pass!")
+    _grant(staff, "cbt_attempts.view")
+    _login(api_client, "staff3@example.com", "s3cret-pass!")
+
+    detail = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts/{attempt.public_id}")
+    assert detail.status_code == 200
+    events = detail.json()["data"]["events"]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "tab_hidden"
