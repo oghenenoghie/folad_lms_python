@@ -50,7 +50,7 @@ from .serializers import (
     StudentAnswerSerializer,
     TopicSerializer,
 )
-from .services import analytics_service, attempt_service, exam_service, question_service
+from .services import analytics_service, attempt_service, exam_service, invigilation_service, question_service
 from .services.attempt_service import AttemptError, InvalidAttemptTransition
 from .services.exam_service import ExamError, InvalidExamTransition
 from .services.question_service import InvalidQuestionTransition, QuestionError
@@ -548,6 +548,30 @@ class ExamAnalyticsView(APIView):
             {
                 "summary": analytics_service.exam_summary(exam=exam),
                 "items": analytics_service.item_analysis(exam=exam),
+            }
+        )
+
+
+class ExamLiveStatusView(APIView):
+    """Staff-facing: poll-based live status of every candidate during an
+    exam window — who's started, time remaining, progress, and whether
+    they're flagged. Gated on cbt_attempts.view, the same permission as
+    the staff attempt list/detail endpoints, since this is the same
+    attempt data at a different granularity (a live snapshot rather than
+    a historical record).
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_attempts.view")()]
+
+    def get(self, request, public_id):
+        from django.utils import timezone
+
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        return envelope(
+            {
+                "server_time": timezone.now(),
+                "candidates": invigilation_service.live_status(exam=exam),
             }
         )
 
