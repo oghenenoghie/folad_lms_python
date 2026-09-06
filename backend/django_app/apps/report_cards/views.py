@@ -31,7 +31,11 @@ from .serializers import (
     ReportCardWeightingSerializer,
 )
 from .services import report_card_bulk_export_service, report_card_service
-from .services.report_card_service import InvalidReportCardTransition, ReportCardError
+from .services.report_card_service import (
+    InvalidReportCardTransition,
+    ReportCardError,
+    visible_report_cards_for,
+)
 
 
 class ReportCardWeightingListCreateView(TenantListCreateAPIView):
@@ -90,7 +94,7 @@ class ReportCardListView(TenantListAPIView):
             qs = qs.filter(class_arm__public_id=class_arm_id)
         if status_filter:
             qs = qs.filter(status=status_filter)
-        return qs
+        return visible_report_cards_for(self.request.user, qs)
 
     def get_permissions(self):
         return [IsAuthenticated(), require_permission("report_cards.view")()]
@@ -105,7 +109,8 @@ class ReportCardDetailView(TenantRetrieveUpdateDestroyAPIView):
     serializer_class = ReportCardSerializer
 
     def get_queryset(self):
-        return ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects__subject")
+        qs = ReportCard.objects.filter(deleted_at__isnull=True).prefetch_related("subjects__subject")
+        return visible_report_cards_for(self.request.user, qs)
 
     def get_permissions(self):
         code = "report_cards.view" if self.request.method == "GET" else "report_cards.update"
@@ -129,7 +134,7 @@ class ReportCardAuditListView(TenantListAPIView):
         report_card_id = self.request.query_params.get("report_card_id")
         if report_card_id:
             qs = qs.filter(report_card__public_id=report_card_id)
-        return qs
+        return visible_report_cards_for(self.request.user, qs, student_field="report_card__student")
 
     def get_permissions(self):
         return [IsAuthenticated(), require_permission("report_cards.view")()]
@@ -275,7 +280,8 @@ class ReportCardPdfView(APIView):
         return [IsAuthenticated(), require_permission("report_cards.view")()]
 
     def get(self, request, public_id):
-        report_card = generics.get_object_or_404(ReportCard.objects, public_id=public_id)
+        qs = visible_report_cards_for(request.user, ReportCard.objects)
+        report_card = generics.get_object_or_404(qs, public_id=public_id)
         if report_card.pdf_status != "ready" or not report_card.pdf_file_url:
             return error_envelope(
                 f"PDF not ready (status: {report_card.pdf_status})", status=409
