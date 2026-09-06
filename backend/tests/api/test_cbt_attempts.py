@@ -163,6 +163,81 @@ def test_sanitize_snapshot_drops_options_entirely_for_answer_key_types():
 
 
 @pytest.mark.django_db
+def test_start_attempt_randomizes_option_order_by_default(ready_exam):
+    # cbt_exam_factory doesn't override randomize_options, so the model's
+    # own default (True) applies here.
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    attempt = start_attempt(candidate=candidate)
+
+    stored_order = attempt.option_orders[str(exam_question.public_id)]
+    assert sorted(stored_order) == ["A", "B"]
+
+
+@pytest.mark.django_db
+def test_delivery_payload_uses_the_stored_option_order_and_never_recomputes_it(ready_exam):
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    attempt = start_attempt(candidate=candidate)
+    stored_order = attempt.option_orders[str(exam_question.public_id)]
+
+    first = build_delivery_payload(attempt=attempt)
+    second = build_delivery_payload(attempt=attempt)
+    for payload in (first, second):
+        delivered_labels = [o["label"] for o in payload[0]["snapshot"]["options"]]
+        assert delivered_labels == stored_order
+
+
+@pytest.mark.django_db
+def test_no_option_randomization_when_exam_disables_it(ready_exam):
+    exam = ready_exam["exam"]
+    exam.randomize_options = False
+    exam.save(update_fields=["randomize_options"])
+    exam_question = exam.exam_questions.get()
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    assert attempt.option_orders == {}
+
+    payload = build_delivery_payload(attempt=attempt)
+    delivered_labels = [o["label"] for o in payload[0]["snapshot"]["options"]]
+    assert delivered_labels == ["A", "B"]  # natural QuestionOption.order
+
+
+@pytest.mark.django_db
+def test_answer_key_only_types_never_get_an_option_order(
+    cbt_exam_fixture_set, cbt_question_factory, student_factory, enrollment_factory
+):
+    fs = cbt_exam_fixture_set
+    exam = fs["exam"]
+    exam.start_at = timezone.now() - timedelta(minutes=5)
+    exam.end_at = timezone.now() + timedelta(hours=1)
+    exam.save(update_fields=["start_at", "end_at"])
+
+    question = cbt_question_factory(
+        subject=fs["subject"], class_level=fs["class_level"], question_type="numeric", marks="5.00"
+    )
+    from apps.cbt.models import QuestionOption as _QuestionOption
+
+    _QuestionOption.objects.create(
+        organization=question.organization, question=question, label="", content={"value": 42, "tolerance": 0.5}, order=1
+    )
+    submit_question(question=question, actor=None)
+    approve_question(question=question, actor=None)
+    add_question_to_exam(exam=exam, question=question)
+
+    student = student_factory(school=fs["school"])
+    enrollment_factory(student=student, class_arm=fs["class_arm"], academic_year=fs["academic_year"])
+    candidate = add_candidate(exam=exam, student=student)
+    published = publish_exam(exam=exam, actor=None)
+
+    attempt = start_attempt(candidate=candidate)
+    assert attempt.option_orders == {}
+
+    payload = build_delivery_payload(attempt=attempt)
+    assert payload[0]["snapshot"]["options"] == []
+
+
+@pytest.mark.django_db
 def test_build_delivery_payload_follows_question_order_and_includes_existing_answer(ready_exam):
     candidate = ready_exam["candidate"]
     exam_question = ready_exam["exam"].exam_questions.get()
