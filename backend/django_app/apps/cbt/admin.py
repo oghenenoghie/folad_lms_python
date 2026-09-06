@@ -6,6 +6,7 @@ from apps.core.admin import TenantAdminMixin, TenantFKAdminMixin
 from .models import (
     CBTExam,
     CBTMedia,
+    ExamAttempt,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -13,6 +14,7 @@ from .models import (
     QuestionBlock,
     QuestionOption,
     QuestionVersion,
+    StudentAnswer,
     Topic,
 )
 
@@ -102,6 +104,7 @@ class ExamSectionAdmin(TenantAdminMixin, ModelAdmin):
 @admin.register(ExamQuestion)
 class ExamQuestionAdmin(TenantAdminMixin, ModelAdmin):
     list_display = ["exam", "question", "section", "order"]
+    search_fields = ["exam__name", "question__code"]
     autocomplete_fields = ["organization", "exam", "section", "question"]
 
 
@@ -110,3 +113,26 @@ class ExamCandidateAdmin(TenantAdminMixin, ModelAdmin):
     list_display = ["exam", "student", "candidate_number", "is_eligible"]
     search_fields = ["candidate_number"]
     autocomplete_fields = ["organization", "exam", "student"]
+
+
+class StudentAnswerInline(TenantFKAdminMixin, TabularInline):
+    model = StudentAnswer
+    extra = 0
+    fields = ["exam_question", "is_correct", "marks_awarded", "graded_at", "flagged"]
+    autocomplete_fields = ["exam_question"]
+
+
+@admin.register(ExamAttempt)
+class ExamAttemptAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["exam", "candidate", "status", "score", "percentage", "passed", "started_at"]
+    list_filter = ["status", "passed"]
+    search_fields = ["exam__name", "candidate__candidate_number"]
+    autocomplete_fields = ["organization", "exam", "candidate"]
+    inlines = [StudentAnswerInline]
+
+
+@admin.register(StudentAnswer)
+class StudentAnswerAdmin(TenantAdminMixin, ModelAdmin):
+    list_display = ["attempt", "exam_question", "is_correct", "marks_awarded", "graded_at", "flagged"]
+    list_filter = ["is_correct", "flagged"]
+    autocomplete_fields = ["organization", "attempt", "exam_question"]

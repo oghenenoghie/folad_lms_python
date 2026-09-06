@@ -486,7 +486,20 @@ class ExamQuestion(BaseModel):
 
     @property
     def marks(self):
-        return self.marks_override if self.marks_override is not None else self.question.marks
+        """`marks_override` always wins. Otherwise, once published, the
+        frozen `snapshot`'s marks — never the live question's, which may
+        have been edited (even re-marked) since this exam locked it in —
+        matches exactly what a candidate was actually told this question
+        was worth. Only a still-draft exam (no snapshot yet) falls back to
+        the live question.
+        """
+        from decimal import Decimal
+
+        if self.marks_override is not None:
+            return self.marks_override
+        if self.snapshot:
+            return Decimal(self.snapshot["marks"])
+        return self.question.marks
 
 
 class ExamCandidate(BaseModel):
@@ -521,3 +534,108 @@ class ExamCandidate(BaseModel):
                 width=4,
             )
         super().save(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: exam delivery — one candidate's attempt, their answers, and the
+# server-authoritative timer. `question_order` is the ONE place
+# randomization ever happens: computed once at start_attempt and stored,
+# never recomputed per request (§16/§17 of the spec: "never randomize on
+# every API request", "the same attempt can be reconstructed after
+# refresh/reconnect").
+# ---------------------------------------------------------------------------
+
+ATTEMPT_STATUS_CHOICES = [
+    ("not_started", "Not Started"),
+    ("in_progress", "In Progress"),
+    ("submitted", "Submitted"),
+    ("expired", "Expired"),
+    ("abandoned", "Abandoned"),
+]
+
+ATTEMPT_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "not_started": {"in_progress"},
+    "in_progress": {"submitted", "expired", "abandoned"},
+    "submitted": set(),
+    "expired": set(),
+    "abandoned": set(),
+}
+
+
+class ExamAttempt(BaseModel):
+    """One candidate's single attempt at an exam — a OneToOne on
+    ExamCandidate rather than allowing several rows per candidate, since
+    "resume" (CBTExam.allow_resume) means reconnecting to *this same*
+    attempt and its already-stored question_order, never starting a fresh
+    one.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    exam = models.ForeignKey(CBTExam, on_delete=models.PROTECT, related_name="attempts")
+    candidate = models.OneToOneField(ExamCandidate, on_delete=models.PROTECT, related_name="attempt")
+    # The exam_question public_ids, in the order this candidate sees them —
+    # randomized once at start if exam.randomize_questions, else natural
+    # ExamQuestion.order. See the module note above on why this is stored,
+    # not recomputed.
+    question_order = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=ATTEMPT_STATUS_CHOICES, default="not_started")
+    started_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    # started_at + exam.duration_minutes + candidate.extra_time_minutes,
+    # fixed at start_attempt — the single source of truth a heartbeat call
+    # compares the current time against; never recomputed from the client.
+    expires_at = models.DateTimeField(null=True, blank=True)
+    score = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    percentage = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    grade = models.CharField(max_length=10, blank=True, default="")
+    passed = models.BooleanField(default=False)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_exam_attempt"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.candidate} - {self.exam}"
+
+
+class StudentAnswer(BaseModel):
+    """One answer to one ExamQuestion within a single attempt. `response`'s
+    shape depends on the question's type (see the spec): e.g.
+    `{"selected_option_id": "..."}` for single_choice, `{"value": 42.5}`
+    for numeric, `{"matches": {"A": "3", ...}}` for matching, `{"x":
+    432, "y": 271}` for hotspot. `graded_at` is set the moment a mark is
+    final — immediately at submit for an auto-gradable type, or whenever a
+    marker grades a subjective one — so attempt_service can tell "every
+    answer has been graded" from "there are still ungraded ones" without
+    guessing from `marks_awarded` alone (a legitimate 0 looks identical to
+    "not graded yet" otherwise).
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    attempt = models.ForeignKey(ExamAttempt, on_delete=models.CASCADE, related_name="answers")
+    exam_question = models.ForeignKey(ExamQuestion, on_delete=models.PROTECT, related_name="cbt_student_answers")
+    response = models.JSONField(default=dict, blank=True)
+    is_correct = models.BooleanField(null=True, blank=True)
+    marks_awarded = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    graded_at = models.DateTimeField(null=True, blank=True)
+    time_spent_seconds = models.PositiveIntegerField(default=0)
+    flagged = models.BooleanField(default=False)
+    answered_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_student_answer"
+        constraints = [
+            models.UniqueConstraint(fields=["attempt", "exam_question"], name="uq_cbt_student_answer_attempt_question")
+        ]
+        ordering = ["attempt", "exam_question"]
+
+    def __str__(self) -> str:
+        return f"{self.attempt} - {self.exam_question}"

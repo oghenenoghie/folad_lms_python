@@ -5,6 +5,8 @@ question's content, not independently permissioned or listed) rather than
 top-level endpoints the way apps.examinations.QuestionOption is — see the
 CBT spec's own API section for why nesting is the right call here.
 """
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -21,6 +23,7 @@ from apps.core.responses import envelope, error_envelope
 from .models import (
     CBTExam,
     CBTMedia,
+    ExamAttempt,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -28,11 +31,13 @@ from .models import (
     QuestionBlock,
     QuestionOption,
     QuestionVersion,
+    StudentAnswer,
     Topic,
 )
 from .serializers import (
     CBTExamSerializer,
     CBTMediaSerializer,
+    ExamAttemptSerializer,
     ExamCandidateSerializer,
     ExamQuestionSerializer,
     ExamSectionSerializer,
@@ -40,9 +45,11 @@ from .serializers import (
     QuestionOptionSerializer,
     QuestionSerializer,
     QuestionVersionSerializer,
+    StudentAnswerSerializer,
     TopicSerializer,
 )
-from .services import exam_service, question_service
+from .services import attempt_service, exam_service, question_service
+from .services.attempt_service import AttemptError, InvalidAttemptTransition
 from .services.exam_service import ExamError, InvalidExamTransition
 from .services.question_service import InvalidQuestionTransition, QuestionError
 
@@ -677,3 +684,201 @@ class ExamCandidateBulkFromClassArmView(APIView):
         return envelope(
             ExamCandidateSerializer(candidates, many=True).data, message="candidates added", status=201
         )
+
+
+def _attempt_payload(attempt: ExamAttempt) -> dict:
+    return {
+        "attempt": ExamAttemptSerializer(attempt).data,
+        "questions": attempt_service.build_delivery_payload(attempt=attempt),
+    }
+
+
+def _own_attempt_or_error(request, public_id):
+    """start/heartbeat/save-answer/flag/submit are ownership-gated, not
+    RBAC-gated (see attempt_service module docstring's design note): every
+    student must always be able to act on their own attempt regardless of
+    what permissions any role happens to grant. Returns (attempt, None) on
+    success, or (None, error_response) — an ownership failure is reported
+    as a 404, not a 403, so a candidate can't probe for other students'
+    attempt IDs by distinguishing "forbidden" from "not found".
+    """
+    student = getattr(request.user, "student_profile", None)
+    if student is None:
+        return None, error_envelope("no student profile is linked to this account", status=404)
+    attempt = generics.get_object_or_404(
+        ExamAttempt.objects.select_related("exam", "candidate"), public_id=public_id, candidate__student=student
+    )
+    return attempt, None
+
+
+class AttemptStartView(APIView):
+    """Self-service: a student starts (or resumes) their own attempt at an
+    exam they're a candidate for — see start_attempt's idempotent resume
+    behavior."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, candidate_public_id):
+        student = getattr(request.user, "student_profile", None)
+        if student is None:
+            return error_envelope("no student profile is linked to this account", status=404)
+        candidate = generics.get_object_or_404(ExamCandidate.objects, public_id=candidate_public_id, student=student)
+        try:
+            attempt = attempt_service.start_attempt(
+                candidate=candidate,
+                ip_address=request.META.get("REMOTE_ADDR", ""),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+        except AttemptError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(_attempt_payload(attempt))
+
+
+class AttemptDetailView(APIView):
+    """Self-service: fetch the candidate's own attempt plus its
+    answer-key-stripped question content — what a client needs to render
+    or resume the exam."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        return envelope(_attempt_payload(attempt))
+
+
+class AttemptHeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        attempt = attempt_service.heartbeat(attempt=attempt)
+        return envelope(_attempt_payload(attempt))
+
+
+class AttemptAnswerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        exam_question = generics.get_object_or_404(
+            ExamQuestion.objects, public_id=request.data.get("exam_question"), exam=attempt.exam
+        )
+        try:
+            answer = attempt_service.save_answer(
+                attempt=attempt,
+                exam_question=exam_question,
+                response=request.data.get("response") or {},
+                time_spent_seconds=int(request.data.get("time_spent_seconds", 0)),
+            )
+        except AttemptError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(StudentAnswerSerializer(answer).data)
+
+
+class AttemptFlagView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        exam_question = generics.get_object_or_404(
+            ExamQuestion.objects, public_id=request.data.get("exam_question"), exam=attempt.exam
+        )
+        try:
+            answer = attempt_service.set_flag(
+                attempt=attempt, exam_question=exam_question, flagged=bool(request.data.get("flagged", True))
+            )
+        except AttemptError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(StudentAnswerSerializer(answer).data)
+
+
+class AttemptSubmitView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        try:
+            attempt = attempt_service.submit_attempt(attempt=attempt, actor=request.user)
+        except InvalidAttemptTransition as exc:
+            return error_envelope(str(exc), status=409)
+        except AttemptError as exc:
+            # e.g. finalize_attempt's Result-integration step failed — the
+            # submission and scoring themselves already committed (see
+            # submit_attempt's docstring on why it isn't one atomic block
+            # with finalize_attempt), so this is reported but not fatal to
+            # the candidate's already-recorded work.
+            return error_envelope(str(exc), status=422)
+        return envelope(_attempt_payload(attempt))
+
+
+class ExamAttemptListView(TenantListAPIView):
+    """Staff-facing: every candidate's attempt at one exam — RBAC-gated,
+    org-wide, no ownership narrowing (that's the self-service views above).
+    """
+
+    serializer_class = ExamAttemptSerializer
+
+    def get_queryset(self):
+        qs = ExamAttempt.objects.filter(exam__public_id=self.kwargs["public_id"]).select_related(
+            "candidate__student", "exam"
+        )
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_attempts.view")()]
+
+
+class ExamAttemptDetailView(APIView):
+    """Staff-facing: one attempt plus its answers, for review/grading."""
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_attempts.view")()]
+
+    def get(self, request, public_id, attempt_public_id):
+        attempt = generics.get_object_or_404(
+            ExamAttempt.objects.filter(exam__public_id=public_id).select_related("candidate__student", "exam"),
+            public_id=attempt_public_id,
+        )
+        answers = attempt.answers.select_related("exam_question")
+        return envelope(
+            {
+                "attempt": ExamAttemptSerializer(attempt).data,
+                "answers": StudentAnswerSerializer(answers, many=True).data,
+            }
+        )
+
+
+class StudentAnswerGradeView(APIView):
+    """Staff-facing: manually award marks to one subjective StudentAnswer —
+    the only write path for a question type scoring_service can't
+    auto-grade (see attempt_service.grade_subjective_answer)."""
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_attempts.grade")()]
+
+    def post(self, request, public_id):
+        answer = generics.get_object_or_404(StudentAnswer.objects, public_id=public_id)
+        try:
+            marks_awarded = Decimal(str(request.data["marks_awarded"]))
+        except (KeyError, InvalidOperation, TypeError):
+            return error_envelope("marks_awarded is required and must be a number", status=400)
+        try:
+            answer = attempt_service.grade_subjective_answer(
+                student_answer=answer, marks_awarded=marks_awarded, actor=request.user
+            )
+        except AttemptError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(StudentAnswerSerializer(answer).data)

@@ -1,6 +1,12 @@
 from django.urls import path
 
 from .views import (
+    AttemptAnswerView,
+    AttemptDetailView,
+    AttemptFlagView,
+    AttemptHeartbeatView,
+    AttemptStartView,
+    AttemptSubmitView,
     CBTExamArchiveView,
     CBTExamDetailView,
     CBTExamListCreateView,
@@ -8,6 +14,8 @@ from .views import (
     CBTMediaDetailView,
     CBTMediaListView,
     CBTMediaUploadView,
+    ExamAttemptDetailView,
+    ExamAttemptListView,
     ExamCandidateBulkFromClassArmView,
     ExamCandidateDetailView,
     ExamCandidateListCreateView,
@@ -28,6 +36,7 @@ from .views import (
     QuestionRejectView,
     QuestionSubmitView,
     QuestionVersionListView,
+    StudentAnswerGradeView,
     TopicDetailView,
     TopicListCreateView,
 )
@@ -121,5 +130,42 @@ urlpatterns = [
         "cbt/exams/<uuid:public_id>/candidates/from-class-arm",
         ExamCandidateBulkFromClassArmView.as_view(),
         name="cbt-exam-candidate-from-class-arm",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/attempts",
+        ExamAttemptListView.as_view(),
+        name="cbt-exam-attempt-list",
+    ),
+    path(
+        "cbt/exams/<uuid:public_id>/attempts/<uuid:attempt_public_id>",
+        ExamAttemptDetailView.as_view(),
+        name="cbt-exam-attempt-detail",
+    ),
+    path(
+        "cbt/answers/<uuid:public_id>/grade",
+        StudentAnswerGradeView.as_view(),
+        name="cbt-answer-grade",
+    ),
+    path(
+        "cbt/my/candidates/<uuid:candidate_public_id>/start-attempt",
+        AttemptStartView.as_view(),
+        name="cbt-my-attempt-start",
+    ),
+    path("cbt/my/attempts/<uuid:public_id>", AttemptDetailView.as_view(), name="cbt-my-attempt-detail"),
+    path(
+        "cbt/my/attempts/<uuid:public_id>/heartbeat",
+        AttemptHeartbeatView.as_view(),
+        name="cbt-my-attempt-heartbeat",
+    ),
+    path(
+        "cbt/my/attempts/<uuid:public_id>/answers",
+        AttemptAnswerView.as_view(),
+        name="cbt-my-attempt-answer",
+    ),
+    path("cbt/my/attempts/<uuid:public_id>/flag", AttemptFlagView.as_view(), name="cbt-my-attempt-flag"),
+    path(
+        "cbt/my/attempts/<uuid:public_id>/submit",
+        AttemptSubmitView.as_view(),
+        name="cbt-my-attempt-submit",
     ),
 ]
