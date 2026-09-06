@@ -50,7 +50,7 @@ from .serializers import (
     StudentAnswerSerializer,
     TopicSerializer,
 )
-from .services import analytics_service, attempt_service, exam_service, question_service
+from .services import analytics_service, attempt_service, exam_service, invigilation_service, question_service
 from .services.attempt_service import AttemptError, InvalidAttemptTransition
 from .services.exam_service import ExamError, InvalidExamTransition
 from .services.question_service import InvalidQuestionTransition, QuestionError
@@ -195,6 +195,51 @@ class QuestionDuplicateView(APIView):
         question = generics.get_object_or_404(Question.objects, public_id=public_id)
         copy = question_service.duplicate_question(question=question, actor=request.user)
         return envelope(QuestionSerializer(copy).data, message="question duplicated", status=201)
+
+
+class QuestionBulkImportView(APIView):
+    """Multipart CSV upload — one Question per row (single_choice/
+    multiple_choice/true_false only; see question_service.
+    bulk_import_questions for the exact column shape and why richer
+    block/option content is out of scope for a flat CSV). A bad row is
+    reported, not fatal to the rest of the sheet.
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_questions.create")()]
+
+    def post(self, request):
+        import csv
+        import io
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return error_envelope("no file provided", status=400)
+        subject = generics.get_object_or_404(Subject.objects, public_id=request.data.get("subject"))
+        class_level = generics.get_object_or_404(ClassLevel.objects, public_id=request.data.get("class_level"))
+        try:
+            text = upload.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return error_envelope("file must be UTF-8 encoded CSV", status=400)
+
+        rows = list(csv.DictReader(io.StringIO(text)))
+        result = question_service.bulk_import_questions(
+            organization=request.user.organization,
+            actor=request.user,
+            subject=subject,
+            class_level=class_level,
+            rows=rows,
+        )
+        return envelope(
+            {
+                "created": QuestionSerializer(result["created"], many=True).data,
+                "errors": result["errors"],
+                "created_count": len(result["created"]),
+                "error_count": len(result["errors"]),
+            },
+            message="bulk import completed",
+            status=201 if result["created"] else 200,
+        )
 
 
 class QuestionVersionListView(TenantListAPIView):
@@ -503,6 +548,30 @@ class ExamAnalyticsView(APIView):
             {
                 "summary": analytics_service.exam_summary(exam=exam),
                 "items": analytics_service.item_analysis(exam=exam),
+            }
+        )
+
+
+class ExamLiveStatusView(APIView):
+    """Staff-facing: poll-based live status of every candidate during an
+    exam window — who's started, time remaining, progress, and whether
+    they're flagged. Gated on cbt_attempts.view, the same permission as
+    the staff attempt list/detail endpoints, since this is the same
+    attempt data at a different granularity (a live snapshot rather than
+    a historical record).
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_attempts.view")()]
+
+    def get(self, request, public_id):
+        from django.utils import timezone
+
+        exam = generics.get_object_or_404(CBTExam.objects, public_id=public_id)
+        return envelope(
+            {
+                "server_time": timezone.now(),
+                "candidates": invigilation_service.live_status(exam=exam),
             }
         )
 

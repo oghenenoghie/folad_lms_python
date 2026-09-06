@@ -4,15 +4,19 @@ the draft->submitted->review->approved->published->archived workflow, and
 immutable version snapshotting. Scoring belongs to a later phase's
 scoring_service, once ExamAttempt/StudentAnswer exist to score.
 """
+from decimal import Decimal, InvalidOperation
+
 from django.db import transaction
 
 from apps.cbt.models import (
+    DIFFICULTY_CHOICES,
     QUESTION_STATUS_TRANSITIONS,
     CBTMedia,
     Question,
     QuestionBlock,
     QuestionOption,
     QuestionVersion,
+    Topic,
 )
 
 # The minimum shape `QuestionBlock.content` must have per block_type,
@@ -270,3 +274,123 @@ def upload_media(
         updated_by=actor,
         **fields,
     )
+
+
+# Bulk import supports the flat, spreadsheet-friendly shape that covers
+# the vast majority of a real question bank — single/multiple choice and
+# true/false — rather than every rich-content block_type, which has no
+# sensible flat-CSV representation. A question needing blocks/options
+# richer than this (an image, an equation, a numeric answer key, ...)
+# still goes through the ordinary create/update API.
+_BULK_IMPORT_QUESTION_TYPES = {"single_choice", "multiple_choice", "true_false"}
+_BULK_IMPORT_OPTION_COLUMNS = ["option_a", "option_b", "option_c", "option_d", "option_e", "option_f"]
+_DIFFICULTY_CODES = {code for code, _ in DIFFICULTY_CHOICES}
+
+
+def _bulk_import_choice_options(row: dict, question_type: str) -> list[dict]:
+    letters = "ABCDEFGH"
+    provided = []
+    for i, column in enumerate(_BULK_IMPORT_OPTION_COLUMNS):
+        text = (row.get(column) or "").strip()
+        if text:
+            provided.append((letters[i], text))
+    if len(provided) < 2:
+        raise QuestionError("at least two non-empty option columns (option_a, option_b, ...) are required")
+
+    correct_raw = (row.get("correct") or "").strip().upper()
+    if not correct_raw:
+        raise QuestionError("'correct' is required (e.g. 'B' or 'A,C')")
+    correct_labels = {label.strip() for label in correct_raw.split(",") if label.strip()}
+    valid_labels = {label for label, _ in provided}
+    unknown = correct_labels - valid_labels
+    if unknown:
+        raise QuestionError(f"'correct' references option(s) that were never provided: {sorted(unknown)}")
+    if question_type == "single_choice" and len(correct_labels) != 1:
+        raise QuestionError("single_choice requires exactly one correct option in 'correct'")
+
+    return [
+        {"label": label, "content": {"text": text}, "is_correct": label in correct_labels, "order": order}
+        for order, (label, text) in enumerate(provided, start=1)
+    ]
+
+
+def _bulk_import_true_false_options(row: dict) -> list[dict]:
+    correct_raw = (row.get("correct") or "").strip().lower()
+    if correct_raw not in ("true", "false"):
+        raise QuestionError("'correct' must be 'true' or 'false' for a true_false question")
+    return [
+        {"label": "true", "content": {}, "is_correct": correct_raw == "true", "order": 1},
+        {"label": "false", "content": {}, "is_correct": correct_raw == "false", "order": 2},
+    ]
+
+
+def _bulk_import_one_row(*, organization, actor, subject, class_level, row: dict) -> Question:
+    question_type = (row.get("question_type") or "single_choice").strip().lower()
+    if question_type not in _BULK_IMPORT_QUESTION_TYPES:
+        raise QuestionError(
+            f"unsupported question_type for bulk import: {question_type!r} "
+            f"(must be one of {sorted(_BULK_IMPORT_QUESTION_TYPES)})"
+        )
+
+    text = (row.get("text") or "").strip()
+    if not text:
+        raise QuestionError("'text' (the question stem) is required")
+
+    topic = None
+    topic_name = (row.get("topic") or "").strip()
+    if topic_name:
+        topic = Topic.objects.filter(subject=subject, name__iexact=topic_name).first()
+        if topic is None:
+            raise QuestionError(f"unknown topic: {topic_name!r}")
+
+    difficulty = (row.get("difficulty") or "medium").strip().lower()
+    if difficulty not in _DIFFICULTY_CODES:
+        raise QuestionError(f"invalid difficulty: {difficulty!r} (must be one of {sorted(_DIFFICULTY_CODES)})")
+
+    try:
+        marks = Decimal(str(row.get("marks") or "1"))
+        negative_marks = Decimal(str(row.get("negative_marks") or "0"))
+    except InvalidOperation as exc:
+        raise QuestionError(f"marks/negative_marks must be numbers: {exc}") from exc
+
+    options = (
+        _bulk_import_true_false_options(row)
+        if question_type == "true_false"
+        else _bulk_import_choice_options(row, question_type)
+    )
+
+    return create_question(
+        organization=organization,
+        actor=actor,
+        subject=subject,
+        class_level=class_level,
+        topic=topic,
+        question_type=question_type,
+        difficulty=difficulty,
+        marks=marks,
+        negative_marks=negative_marks,
+        blocks=[{"block_type": "paragraph", "content": {"html": text}, "order": 1}],
+        options=options,
+    )
+
+
+def bulk_import_questions(*, organization, actor, subject, class_level, rows: list[dict]) -> dict:
+    """Creates one Question per row of a parsed CSV (columns:
+    question_type, topic, difficulty, marks, negative_marks, text,
+    option_a..option_f, correct — see _bulk_import_one_row). Never aborts
+    the whole batch on one bad row: collects a per-row error and keeps
+    going, so a single typo in a 200-row sheet doesn't block the other
+    199. Returns {"created": [Question, ...], "errors": [{"row": int, "error": str}, ...]}
+    (row numbers are 1-based and count the header as row 0's data, i.e.
+    the first data row is row 1).
+    """
+    created = []
+    errors = []
+    for row_number, row in enumerate(rows, start=1):
+        try:
+            created.append(
+                _bulk_import_one_row(organization=organization, actor=actor, subject=subject, class_level=class_level, row=row)
+            )
+        except QuestionError as exc:
+            errors.append({"row": row_number, "error": str(exc)})
+    return {"created": created, "errors": errors}
