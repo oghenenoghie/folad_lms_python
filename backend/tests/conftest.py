@@ -284,6 +284,47 @@ def subject_factory(db):
 
 
 @pytest.fixture
+def cbt_topic_factory(db):
+    from apps.cbt.models import Topic
+    from apps.tenancy.context import activate_organization
+
+    def make(*, subject, name="Algebra", **extra):
+        activate_organization(subject.organization_id)
+        return Topic.all_tenants.create(organization=subject.organization, subject=subject, name=name, **extra)
+
+    return make
+
+
+@pytest.fixture
+def cbt_question_factory(db):
+    from apps.cbt.models import Question
+    from apps.tenancy.context import activate_organization
+
+    def make(*, subject, class_level, question_type="single_choice", marks="1.00", **extra):
+        activate_organization(subject.organization_id)
+        return Question.all_tenants.create(
+            organization=subject.organization,
+            subject=subject,
+            class_level=class_level,
+            question_type=question_type,
+            marks=marks,
+            **extra,
+        )
+
+    return make
+
+
+@pytest.fixture
+def cbt_fixture_set(organization, school_factory, campus_factory, class_level_factory, subject_factory):
+    """One school/class/subject — the minimal scaffolding most apps.cbt
+    tests need before creating a Question against it."""
+    school = school_factory(organization=organization)
+    class_level = class_level_factory(campus=campus_factory(school=school))
+    subject = subject_factory(school=school)
+    return {"school": school, "class_level": class_level, "subject": subject}
+
+
+@pytest.fixture
 def class_subject_factory(db):
     from apps.academics.models import ClassSubject
     from apps.tenancy.context import activate_organization
