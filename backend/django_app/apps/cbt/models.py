@@ -45,9 +45,13 @@ QUESTION_STATUS_CHOICES = [
 # A question can move forward one step at a time (draft -> submitted ->
 # review -> approved -> published) or be sent back to draft at any point
 # (a rejection) or archived from published — see question_service.
+# "submitted" -> "approved" directly is also allowed: the reviewer-facing
+# API (submit/approve/reject) doesn't require a separate "start review"
+# call in between, though a reviewer picking up a question via start_review
+# first (submitted -> review) is still a valid path to the same approval.
 QUESTION_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"submitted"},
-    "submitted": {"review", "draft"},
+    "submitted": {"review", "approved", "draft"},
     "review": {"approved", "draft"},
     "approved": {"published", "draft"},
     "published": {"archived"},
