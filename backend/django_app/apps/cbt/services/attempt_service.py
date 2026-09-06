@@ -15,9 +15,25 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.cbt.models import ATTEMPT_STATUS_TRANSITIONS, AUTO_GRADABLE_QUESTION_TYPES, ExamAttempt, StudentAnswer
+from apps.cbt.models import (
+    ATTEMPT_STATUS_TRANSITIONS,
+    AUTO_GRADABLE_QUESTION_TYPES,
+    ExamAttempt,
+    ExamAttemptEvent,
+    StudentAnswer,
+)
 from apps.cbt.services import scoring_service
 from apps.cbt.services.scoring_service import ScoringError
+
+# Of EVENT_TYPE_CHOICES, these are the ones that actually indicate the
+# candidate may have left the exam surface to seek outside help — the
+# paired "back to normal" events (tab_visible, fullscreen_enter,
+# window_focus, reconnect) are informational only and never count here.
+SUSPICIOUS_EVENT_TYPES = {"tab_hidden", "fullscreen_exit", "window_blur", "copy_attempt", "paste_attempt"}
+# A reasonable default, not a tuned constant: three suspicious signals in
+# one attempt is enough to be worth a human's attention, not so few that
+# a single accidental Alt-Tab flags everyone.
+AUTO_FLAG_THRESHOLD = 3
 
 # CBTExam.exam_type has no 1:1 counterpart in apps.examinations.Assessment's
 # ASSESSMENT_TYPE_CHOICES (test/quiz/assignment/project/practical/exam) —
@@ -159,6 +175,26 @@ def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAn
     answer.flagged = flagged
     answer.save(update_fields=["flagged"])
     return answer
+
+
+def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
+    """Records one client-reported proctoring signal (visibility change,
+    fullscreen exit, copy/paste, connectivity) and auto-flags the attempt
+    for human review once its count of SUSPICIOUS_EVENT_TYPES reaches
+    AUTO_FLAG_THRESHOLD. Never raises on a benign/informational event type
+    outside SUSPICIOUS_EVENT_TYPES — those are still recorded, just don't
+    count toward flagging.
+    """
+    _require_open(attempt)
+    event = ExamAttemptEvent.objects.create(
+        organization=attempt.organization, attempt=attempt, event_type=event_type, metadata=metadata or {}
+    )
+    if event_type in SUSPICIOUS_EVENT_TYPES and not attempt.flagged_for_review:
+        suspicious_count = attempt.events.filter(event_type__in=SUSPICIOUS_EVENT_TYPES).count()
+        if suspicious_count >= AUTO_FLAG_THRESHOLD:
+            attempt.flagged_for_review = True
+            attempt.save(update_fields=["flagged_for_review"])
+    return event
 
 
 def _grade_auto_gradable_answers(*, attempt: ExamAttempt) -> None:

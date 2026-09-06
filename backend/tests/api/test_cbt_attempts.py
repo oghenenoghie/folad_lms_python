@@ -10,8 +10,9 @@ from decimal import Decimal
 import pytest
 from django.utils import timezone
 
-from apps.cbt.models import ExamAttempt, QuestionOption, StudentAnswer
+from apps.cbt.models import ExamAttempt, ExamAttemptEvent, QuestionOption, StudentAnswer
 from apps.cbt.services.attempt_service import (
+    AUTO_FLAG_THRESHOLD,
     AttemptError,
     InvalidAttemptTransition,
     build_delivery_payload,
@@ -19,6 +20,7 @@ from apps.cbt.services.attempt_service import (
     grade_subjective_answer,
     heartbeat,
     is_fully_graded,
+    log_attempt_event,
     sanitize_snapshot_for_delivery,
     save_answer,
     set_flag,
@@ -438,3 +440,49 @@ def test_finalize_fails_clearly_without_a_class_subject_assignment(
     attempt.refresh_from_db()
     assert attempt.status == "submitted"
     assert attempt.score == Decimal("5.00")
+
+
+@pytest.mark.django_db
+def test_log_attempt_event_records_but_does_not_flag_below_threshold(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+
+    for _ in range(AUTO_FLAG_THRESHOLD - 1):
+        event = log_attempt_event(attempt=attempt, event_type="tab_hidden")
+        assert isinstance(event, ExamAttemptEvent)
+
+    attempt.refresh_from_db()
+    assert attempt.flagged_for_review is False
+    assert attempt.events.count() == AUTO_FLAG_THRESHOLD - 1
+
+
+@pytest.mark.django_db
+def test_log_attempt_event_auto_flags_once_threshold_is_reached(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+
+    for _ in range(AUTO_FLAG_THRESHOLD):
+        log_attempt_event(attempt=attempt, event_type="fullscreen_exit")
+
+    attempt.refresh_from_db()
+    assert attempt.flagged_for_review is True
+
+
+@pytest.mark.django_db
+def test_benign_event_types_never_count_toward_flagging(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+
+    for _ in range(AUTO_FLAG_THRESHOLD * 5):
+        log_attempt_event(attempt=attempt, event_type="tab_visible")
+
+    attempt.refresh_from_db()
+    assert attempt.flagged_for_review is False
+
+
+@pytest.mark.django_db
+def test_log_attempt_event_requires_an_open_attempt(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+    submit_attempt(attempt=attempt, actor=None)
+
+    with pytest.raises(AttemptError):
+        log_attempt_event(attempt=attempt, event_type="tab_hidden")

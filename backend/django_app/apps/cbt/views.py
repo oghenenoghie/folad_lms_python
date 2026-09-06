@@ -24,6 +24,7 @@ from .models import (
     CBTExam,
     CBTMedia,
     ExamAttempt,
+    ExamAttemptEvent,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -37,6 +38,7 @@ from .models import (
 from .serializers import (
     CBTExamSerializer,
     CBTMediaSerializer,
+    ExamAttemptEventSerializer,
     ExamAttemptSerializer,
     ExamCandidateSerializer,
     ExamQuestionSerializer,
@@ -800,6 +802,32 @@ class AttemptFlagView(APIView):
         return envelope(StudentAnswerSerializer(answer).data)
 
 
+class AttemptEventView(APIView):
+    """Self-service: the client reports one proctoring signal (tab hidden,
+    fullscreen exit, copy/paste, connectivity change, ...) as it happens
+    during the attempt. See attempt_service.log_attempt_event for which of
+    these count toward auto-flagging the attempt for a human reviewer.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        attempt, err = _own_attempt_or_error(request, public_id)
+        if err:
+            return err
+        serializer = ExamAttemptEventSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            event = attempt_service.log_attempt_event(
+                attempt=attempt,
+                event_type=serializer.validated_data["event_type"],
+                metadata=serializer.validated_data.get("metadata", {}),
+            )
+        except AttemptError as exc:
+            return error_envelope(str(exc), status=400)
+        return envelope(ExamAttemptEventSerializer(event).data, status=201)
+
+
 class AttemptSubmitView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -835,6 +863,9 @@ class ExamAttemptListView(TenantListAPIView):
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        flagged_param = self.request.query_params.get("flagged_for_review")
+        if flagged_param is not None:
+            qs = qs.filter(flagged_for_review=flagged_param.lower() in ("1", "true", "yes"))
         return qs
 
     def get_permissions(self):
@@ -842,7 +873,8 @@ class ExamAttemptListView(TenantListAPIView):
 
 
 class ExamAttemptDetailView(APIView):
-    """Staff-facing: one attempt plus its answers, for review/grading."""
+    """Staff-facing: one attempt plus its answers and proctoring events,
+    for review/grading."""
 
     def get_permissions(self):
         return [IsAuthenticated(), require_permission("cbt_attempts.view")()]
@@ -857,6 +889,7 @@ class ExamAttemptDetailView(APIView):
             {
                 "attempt": ExamAttemptSerializer(attempt).data,
                 "answers": StudentAnswerSerializer(answers, many=True).data,
+                "events": ExamAttemptEventSerializer(attempt.events.all(), many=True).data,
             }
         )
 

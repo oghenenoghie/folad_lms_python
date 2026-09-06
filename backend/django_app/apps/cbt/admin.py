@@ -7,6 +7,7 @@ from .models import (
     CBTExam,
     CBTMedia,
     ExamAttempt,
+    ExamAttemptEvent,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -122,13 +123,20 @@ class StudentAnswerInline(TenantFKAdminMixin, TabularInline):
     autocomplete_fields = ["exam_question"]
 
 
+class ExamAttemptEventInline(TenantFKAdminMixin, TabularInline):
+    model = ExamAttemptEvent
+    extra = 0
+    fields = ["event_type", "metadata", "created_at"]
+    readonly_fields = ["created_at"]
+
+
 @admin.register(ExamAttempt)
 class ExamAttemptAdmin(TenantAdminMixin, ModelAdmin):
-    list_display = ["exam", "candidate", "status", "score", "percentage", "passed", "started_at"]
-    list_filter = ["status", "passed"]
+    list_display = ["exam", "candidate", "status", "score", "percentage", "passed", "flagged_for_review", "started_at"]
+    list_filter = ["status", "passed", "flagged_for_review"]
     search_fields = ["exam__name", "candidate__candidate_number"]
     autocomplete_fields = ["organization", "exam", "candidate"]
-    inlines = [StudentAnswerInline]
+    inlines = [StudentAnswerInline, ExamAttemptEventInline]
 
 
 @admin.register(StudentAnswer)
