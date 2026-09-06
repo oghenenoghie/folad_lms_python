@@ -9,6 +9,7 @@ from apps.students.models import Student
 from .models import (
     CBTExam,
     CBTMedia,
+    ExamAttempt,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
@@ -16,6 +17,7 @@ from .models import (
     QuestionBlock,
     QuestionOption,
     QuestionVersion,
+    StudentAnswer,
     Topic,
 )
 
@@ -208,3 +210,56 @@ class ExamCandidateSerializer(serializers.ModelSerializer):
             "extra_time_minutes",
             "is_eligible",
         ]
+
+
+class ExamAttemptSerializer(serializers.ModelSerializer):
+    """Read-only end to end — every field here is written exclusively by
+    apps.cbt.services.attempt_service (start/heartbeat/submit/finalize),
+    never by a plain client PATCH.
+    """
+
+    exam = PublicIdRelatedField(read_only=True)
+    candidate = PublicIdRelatedField(read_only=True)
+
+    class Meta:
+        model = ExamAttempt
+        fields = [
+            "public_id",
+            "exam",
+            "candidate",
+            "status",
+            "question_order",
+            "started_at",
+            "submitted_at",
+            "expires_at",
+            "score",
+            "percentage",
+            "grade",
+            "passed",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class StudentAnswerSerializer(serializers.ModelSerializer):
+    """Read-only — writes go through attempt_service.save_answer/set_flag/
+    grade_subjective_answer, never a plain client PATCH."""
+
+    attempt = PublicIdRelatedField(read_only=True)
+    exam_question = PublicIdRelatedField(read_only=True)
+
+    class Meta:
+        model = StudentAnswer
+        fields = [
+            "public_id",
+            "attempt",
+            "exam_question",
+            "response",
+            "is_correct",
+            "marks_awarded",
+            "graded_at",
+            "time_spent_seconds",
+            "flagged",
+            "answered_at",
+        ]
+        read_only_fields = fields
