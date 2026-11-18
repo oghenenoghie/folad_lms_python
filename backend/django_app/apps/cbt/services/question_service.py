@@ -379,7 +379,6 @@ def _bulk_import_payload(*, subject, row: dict) -> dict:
     )
     return {
         "subject": subject,
-        "class_level": None,
         "topic": topic,
         "question_type": question_type,
         "difficulty": difficulty,
