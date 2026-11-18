@@ -644,3 +644,90 @@ def test_finalization_refuses_to_overwrite_a_result_past_entered(ready_exam):
     existing.refresh_from_db()
     assert existing.status == "submitted"
     assert Result.objects.filter(assessment=existing.assessment, student=ready_exam["student"]).count() == 1
+
+
+@pytest.mark.django_db
+def test_attempt_event_retry_with_same_client_id_is_idempotent(ready_exam):
+    import uuid
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    client_event_id = uuid.uuid4()
+    first = log_attempt_event(
+        attempt=attempt,
+        event_type="tab_hidden",
+        metadata={"visibility": "hidden"},
+        client_event_id=client_event_id,
+    )
+    replay = log_attempt_event(
+        attempt=attempt,
+        event_type="tab_hidden",
+        metadata={"visibility": "hidden"},
+        client_event_id=client_event_id,
+    )
+
+    assert first.pk == replay.pk
+    assert replay._was_created is False
+    assert attempt.events.filter(client_event_id=client_event_id).count() == 1
+
+
+@pytest.mark.django_db
+def test_attempt_event_idempotency_key_cannot_change_payload(ready_exam):
+    import uuid
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    client_event_id = uuid.uuid4()
+    log_attempt_event(
+        attempt=attempt,
+        event_type="tab_hidden",
+        metadata={"visibility": "hidden"},
+        client_event_id=client_event_id,
+    )
+
+    with pytest.raises(AttemptError, match="different event payload"):
+        log_attempt_event(
+            attempt=attempt,
+            event_type="fullscreen_exit",
+            metadata={"visibility": "hidden"},
+            client_event_id=client_event_id,
+        )
+
+    assert attempt.events.filter(client_event_id=client_event_id).count() == 1
+
+
+@pytest.mark.django_db
+def test_duplicate_attempt_event_does_not_increment_suspicious_count(ready_exam):
+    import uuid
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    client_event_id = uuid.uuid4()
+    for _ in range(AUTO_FLAG_THRESHOLD - 1):
+        log_attempt_event(
+            attempt=attempt,
+            event_type="tab_hidden",
+            client_event_id=client_event_id,
+        )
+
+    attempt.refresh_from_db()
+    assert attempt.flagged_for_review is False
+    assert attempt.events.filter(event_type="tab_hidden").count() == 1
+
+
+@pytest.mark.django_db
+def test_attempt_event_rows_are_database_immutable_on_postgresql(ready_exam):
+    from django.db import IntegrityError, connection, transaction
+
+    if connection.vendor != "postgresql":
+        pytest.skip("database immutability trigger is PostgreSQL-specific")
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    event = log_attempt_event(attempt=attempt, event_type="tab_hidden")
+
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            ExamAttemptEvent.objects.filter(pk=event.pk).update(metadata={"tampered": True})
+
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            ExamAttemptEvent.objects.filter(pk=event.pk).delete()
+
+    assert ExamAttemptEvent.objects.filter(pk=event.pk).exists()
