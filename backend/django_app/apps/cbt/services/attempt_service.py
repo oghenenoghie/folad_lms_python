@@ -153,7 +153,10 @@ def _auto_close(*, attempt: ExamAttempt, new_status: str) -> ExamAttempt:
 
     if is_fully_graded(attempt=locked):
         finalize_attempt(attempt=locked, actor=None)
-    return locked
+    # Keep the caller's instance consistent with the committed terminal
+    # state and any fields written by finalize_attempt (passed/grade).
+    attempt.refresh_from_db()
+    return attempt
 
 
 def _require_open(attempt: ExamAttempt) -> None:
@@ -284,7 +287,11 @@ def submit_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
 
     if is_fully_graded(attempt=locked):
         finalize_attempt(attempt=locked, actor=actor)
-    return locked
+    # finalize_attempt reloads and persists the final pass/grade fields on
+    # its own locked instance. Refresh the caller's object before returning
+    # so API serialization and existing service callers see the final state.
+    attempt.refresh_from_db()
+    return attempt
 
 
 # These four types keep their entire answer key inside options[0].content
