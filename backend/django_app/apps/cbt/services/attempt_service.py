@@ -122,7 +122,8 @@ def start_attempt(*, candidate, ip_address: str = "", user_agent: str = "") -> E
             "ip_address", "user_agent",
         ])
         return attempt
-def heartbeat(*, attempt: ExamAttempt) -> ExamAttempt:
+
+\1*, attempt: ExamAttempt) -> ExamAttempt:
     """Use the server clock and a row lock to expire an attempt once its
     fixed deadline has been reached. Re-reading under the lock prevents a
     stale heartbeat from closing an attempt that another request already
@@ -181,7 +182,8 @@ def save_answer(*, attempt: ExamAttempt, exam_question, response: dict, time_spe
             },
         )
         return answer
-def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAnswer:
+
+\1*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAnswer:
     with transaction.atomic():
         locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
         _require_open(locked)
@@ -195,7 +197,8 @@ def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAn
             answer.flagged = flagged
             answer.save(update_fields=["flagged"])
         return answer
-def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
+
+\1*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
     """Append a client-reported signal while holding the attempt lock so
     event insertion and the threshold-count/auto-flag decision are atomic
     relative to other event requests and terminal transitions.
@@ -212,7 +215,8 @@ def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict |
                 locked.flagged_for_review = True
                 locked.save(update_fields=["flagged_for_review"])
         return event
-def _grade_auto_gradable_answers(*, attempt: ExamAttempt) -> None:
+
+\1*, attempt: ExamAttempt) -> None:
     for answer in attempt.answers.select_related("exam_question").filter(graded_at__isnull=True):
         try:
             is_correct, marks_awarded = scoring_service.grade_response(
@@ -376,7 +380,8 @@ def grade_subjective_answer(*, student_answer: StudentAnswer, marks_awarded: Dec
     if should_finalize:
         finalize_attempt(attempt=attempt, actor=actor)
     return answer
-def _resolve_grade(*, school, percentage) -> str:
+
+\1*, school, percentage) -> str:
     from apps.examinations.models import GradeBand
 
     band = (
