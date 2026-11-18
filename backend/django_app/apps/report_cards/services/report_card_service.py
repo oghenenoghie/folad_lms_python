@@ -31,6 +31,7 @@ from apps.examinations.models import Result
 from apps.examinations.services.result_service import _resolve_grade
 from apps.schools.models import Term
 from apps.students.models import Student
+from apps.tenancy.context import activate_platform_mode, deactivate_platform_mode
 
 from ..models import ReportCard, ReportCardAudit, ReportCardSubject, ReportCardWeighting
 from ..tasks.reports import generate_report_card_pdf
@@ -348,27 +349,35 @@ def verify_report_card(*, verification_code: str) -> ReportCard | None:
     verifies — "generated" (not yet reviewed/published) and "draft" never
     do, so a not-yet-released report card can't be confirmed early.
     """
-    return (
-        ReportCard.all_tenants.filter(
-            verification_code=verification_code,
-            status__in=("published", "archived"),
-            deleted_at__isnull=True,
-        )
-        .select_related("student__school", "academic_year", "term", "class_level", "class_arm")
-        # Prefetch.queryset must also use all_tenants: the plain "subjects"
-        # relation goes through ReportCardSubject's default TenantManager,
-        # which would filter to an active org context that doesn't exist
-        # on this unauthenticated request and silently come back empty.
-        .prefetch_related(
-            Prefetch(
-                "subjects",
-                queryset=ReportCardSubject.all_tenants.select_related("subject").order_by(
-                    "subject__name"
-                ),
+    # This is the one deliberately public cross-tenant lookup. The
+    # platform-mode GUC is enabled only for this narrowly filtered query
+    # (verification_code is unique and unguessable), then cleared even if
+    # the query raises. Never rely on a previous request's connection state.
+    activate_platform_mode()
+    try:
+        return (
+            ReportCard.all_tenants.filter(
+                verification_code=verification_code,
+                status__in=("published", "archived"),
+                deleted_at__isnull=True,
             )
+            .select_related("student__school", "academic_year", "term", "class_level", "class_arm")
+            # Prefetch.queryset must also use all_tenants: the plain "subjects"
+            # relation goes through ReportCardSubject's default TenantManager,
+            # which would filter to an active org context that doesn't exist
+            # on this unauthenticated request and silently come back empty.
+            .prefetch_related(
+                Prefetch(
+                    "subjects",
+                    queryset=ReportCardSubject.all_tenants.select_related("subject").order_by(
+                        "subject__name"
+                    ),
+                )
+            )
+            .first()
         )
-        .first()
-    )
+    finally:
+        deactivate_platform_mode()
 
 
 def archive_report_card(*, report_card: ReportCard, actor) -> ReportCard:
