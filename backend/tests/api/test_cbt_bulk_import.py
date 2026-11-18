@@ -228,10 +228,10 @@ def test_bulk_import_endpoint_supports_xlsx_and_dry_run(
 @pytest.mark.parametrize(
     "filename,content,error",
     [
-        ("questions.txt", b"text,correct\\nQ,A\\n", "only .csv and .xlsx files are supported"),
-        ("questions.csv", b"\\xff,correct\\nQ,A\\n", "CSV must use UTF-8 encoding"),
-        ("questions.csv", b"text,text,correct\\nQ,Q,A\\n", "column headers must be unique"),
-        ("questions.csv", b"text,option_a,option_b\\nQ,A,B\\n", "missing required column"),
+        ("questions.txt", b"text,correct\nQ,A\n", "only .csv and .xlsx files are supported"),
+        ("questions.csv", b"\xff,correct\nQ,A\n", "CSV must use UTF-8 encoding"),
+        ("questions.csv", b"text,text,correct\nQ,Q,A\n", "column headers must be unique"),
+        ("questions.csv", b"text,option_a,option_b\nQ,A,B\n", "missing required column"),
     ],
 )
 def test_bulk_import_parser_rejects_invalid_csv_inputs(filename, content, error):
