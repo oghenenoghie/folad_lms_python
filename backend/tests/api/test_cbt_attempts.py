@@ -195,8 +195,6 @@ def test_no_option_randomization_when_exam_disables_it(ready_exam):
     exam = ready_exam["exam"]
     exam.randomize_options = False
     exam.save(update_fields=["randomize_options"])
-    exam_question = exam.exam_questions.get()
-
     attempt = start_attempt(candidate=ready_exam["candidate"])
     assert attempt.option_orders == {}
 
@@ -230,7 +228,7 @@ def test_answer_key_only_types_never_get_an_option_order(
     student = student_factory(school=fs["school"])
     enrollment_factory(student=student, class_arm=fs["class_arm"], academic_year=fs["academic_year"])
     candidate = add_candidate(exam=exam, student=student)
-    published = publish_exam(exam=exam, actor=None)
+    publish_exam(exam=exam, actor=None)
 
     attempt = start_attempt(candidate=candidate)
     assert attempt.option_orders == {}

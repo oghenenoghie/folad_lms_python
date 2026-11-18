@@ -455,7 +455,7 @@ def finalize_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
     recompute_score(attempt=attempt)
     exam = attempt.exam
     student = attempt.candidate.student
-    attempt.passed = attempt.score >= Decimal(str(exam.pass_mark))
+    attempt.passed = attempt.percentage >= Decimal(str(exam.pass_mark))
     attempt.grade = _resolve_grade(school=exam.school, percentage=attempt.percentage)
     attempt.save(update_fields=["passed", "grade"])
 
