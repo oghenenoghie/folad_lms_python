@@ -123,7 +123,7 @@ def start_attempt(*, candidate, ip_address: str = "", user_agent: str = "") -> E
         ])
         return attempt
 
-\1*, attempt: ExamAttempt) -> ExamAttempt:
+def heartbeat(*, attempt: ExamAttempt) -> ExamAttempt:
     """Use the server clock and a row lock to expire an attempt once its
     fixed deadline has been reached. Re-reading under the lock prevents a
     stale heartbeat from closing an attempt that another request already
@@ -159,6 +159,8 @@ def _auto_close(*, attempt: ExamAttempt, new_status: str) -> ExamAttempt:
 def _require_open(attempt: ExamAttempt) -> None:
     if attempt.status != "in_progress":
         raise AttemptError(f"attempt is not in progress (status: {attempt.status!r})")
+    if attempt.expires_at is None:
+        raise AttemptError("this attempt has no server expiry deadline")
     if timezone.now() >= attempt.expires_at:
         raise AttemptError("time has expired for this attempt")
 
@@ -183,7 +185,7 @@ def save_answer(*, attempt: ExamAttempt, exam_question, response: dict, time_spe
         )
         return answer
 
-\1*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAnswer:
+def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAnswer:
     with transaction.atomic():
         locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
         _require_open(locked)
@@ -198,7 +200,7 @@ def save_answer(*, attempt: ExamAttempt, exam_question, response: dict, time_spe
             answer.save(update_fields=["flagged"])
         return answer
 
-\1*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
+def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
     """Append a client-reported signal while holding the attempt lock so
     event insertion and the threshold-count/auto-flag decision are atomic
     relative to other event requests and terminal transitions.
@@ -216,7 +218,7 @@ def save_answer(*, attempt: ExamAttempt, exam_question, response: dict, time_spe
                 locked.save(update_fields=["flagged_for_review"])
         return event
 
-\1*, attempt: ExamAttempt) -> None:
+def _grade_auto_gradable_answers(*, attempt: ExamAttempt) -> None:
     for answer in attempt.answers.select_related("exam_question").filter(graded_at__isnull=True):
         try:
             is_correct, marks_awarded = scoring_service.grade_response(
@@ -381,7 +383,7 @@ def grade_subjective_answer(*, student_answer: StudentAnswer, marks_awarded: Dec
         finalize_attempt(attempt=attempt, actor=actor)
     return answer
 
-\1*, school, percentage) -> str:
+def _resolve_grade(*, school, percentage) -> str:
     from apps.examinations.models import GradeBand
 
     band = (
