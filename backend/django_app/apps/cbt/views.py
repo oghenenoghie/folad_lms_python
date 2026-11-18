@@ -229,7 +229,16 @@ class QuestionBulkImportView(APIView):
             rows = list(reader)
         elif suffix == ".xlsx":
             try:
+                import zipfile
                 from openpyxl import load_workbook
+
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    members = archive.infolist()
+                    if len(members) > 1000 or sum(member.file_size for member in members) > 50 * 1024 * 1024:
+                        raise ValueError("XLSX archive expands beyond the 50 MB safety limit")
+                    names = {member.filename for member in members}
+                    if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                        raise ValueError("file is not a valid XLSX workbook")
                 workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
                 sheet = workbook.active
                 values = sheet.iter_rows(values_only=True)
