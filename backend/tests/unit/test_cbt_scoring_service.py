@@ -2,6 +2,8 @@
 beyond building a plain snapshot dict, since grade_response only ever
 reads a frozen ExamQuestion.snapshot, never the live Question.
 """
+from decimal import Decimal
+
 import pytest
 
 from apps.cbt.services.scoring_service import ScoringError, grade_response
@@ -126,3 +128,103 @@ def test_no_snapshot_raises_scoring_error():
     eq = _FakeExamQuestion(snapshot=None)
     with pytest.raises(ScoringError):
         grade_response(exam_question=eq, response={})
+
+
+
+def test_negative_marking_applies_frozen_per_question_penalty_when_exam_enables_it():
+    snapshot = _snapshot(
+        "single_choice",
+        [{"label": "A", "is_correct": False}, {"label": "B", "is_correct": True}],
+    )
+    snapshot["negative_marks"] = "1.50"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, positive = grade_response(exam_question=eq, response={"selected_option_label": "B"})
+    wrong, penalty = grade_response(exam_question=eq, response={"selected_option_label": "A"})
+
+    assert correct is True
+    assert positive == Decimal("5.00")
+    assert wrong is False
+    assert penalty == Decimal("-1.50")
+
+
+def test_negative_marking_is_disabled_by_default_even_when_question_has_penalty():
+    snapshot = _snapshot(
+        "single_choice",
+        [{"label": "A", "is_correct": False}, {"label": "B", "is_correct": True}],
+    )
+    snapshot["negative_marks"] = "2.00"
+    eq = _FakeExamQuestion(snapshot)
+
+    correct, marks = grade_response(exam_question=eq, response={"selected_option_label": "A"})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_negative_marking_does_not_penalize_an_unanswered_question():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "2.00"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, marks = grade_response(exam_question=eq, response={})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_negative_marking_rejects_invalid_snapshot_penalty():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "-0.50"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    with pytest.raises(ScoringError):
+        grade_response(exam_question=eq, response={"selected_option_label": "wrong"})
+
+
+def test_blank_numeric_response_is_unanswered_even_when_negative_marking_is_enabled():
+    snapshot = _snapshot("numeric", [{"content": {"value": 42, "tolerance": 0}}])
+    snapshot["negative_marks"] = "1.00"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, marks = grade_response(exam_question=eq, response={})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_whitespace_only_response_is_unanswered():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "1.00"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, marks = grade_response(exam_question=eq, response={"selected_option_label": "   "})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_negative_penalty_cannot_exceed_question_marks():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "6.00"
+    eq = _FakeExamQuestion(snapshot, marks="5.00")
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    with pytest.raises(ScoringError):
+        grade_response(exam_question=eq, response={"selected_option_label": "wrong"})
+
+
+def test_negative_mark_configuration_must_be_between_zero_and_question_marks():
+    from apps.cbt.services.question_service import QuestionError, _validate_scoring_values
+
+    _validate_scoring_values(marks="5.00", negative_marks="0.00")
+    _validate_scoring_values(marks="5.00", negative_marks="5.00")
+    with pytest.raises(QuestionError):
+        _validate_scoring_values(marks="5.00", negative_marks="-0.01")
+    with pytest.raises(QuestionError):
+        _validate_scoring_values(marks="5.00", negative_marks="5.01")

@@ -536,3 +536,27 @@ def test_submit_just_before_expiry_is_submitted(ready_exam, monkeypatch):
     assert submitted.status == "submitted"
     assert submitted.submitted_at == just_before_deadline
     assert submitted.score == Decimal("5.00")
+
+
+@pytest.mark.django_db
+def test_exam_negative_marking_uses_frozen_penalty_and_never_drops_score_below_zero(ready_exam):
+    exam = ready_exam["exam"]
+    exam.negative_marking = True
+    exam.save(update_fields=["negative_marking"])
+    exam_question = exam.exam_questions.get()
+    exam_question.snapshot["negative_marks"] = "1.50"
+    exam_question.save(update_fields=["snapshot"])
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "A"},
+    )
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    answer = StudentAnswer.objects.get(attempt=attempt, exam_question=exam_question)
+    assert answer.is_correct is False
+    assert answer.marks_awarded == Decimal("-1.50")
+    assert submitted.score == Decimal("0")
+    assert submitted.percentage == Decimal("0")

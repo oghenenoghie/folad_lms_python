@@ -326,6 +326,9 @@ def recompute_score(*, attempt: ExamAttempt) -> ExamAttempt:
     total_awarded = attempt.answers.filter(graded_at__isnull=False).aggregate(total=Sum("marks_awarded"))[
         "total"
     ] or Decimal("0")
+    # Negative marking may reduce the raw sum below zero, but a
+    # candidate's final examination score cannot be negative.
+    total_awarded = max(total_awarded, Decimal("0"))
     attempt.score = total_awarded
     attempt.percentage = (
         round((total_awarded / attempt.exam.total_marks) * 100, 2) if attempt.exam.total_marks else Decimal("0")

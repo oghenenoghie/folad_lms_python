@@ -22,12 +22,26 @@ These are source-inspection observations. Reproduce them on the selected maintai
 | ID | Observation | Risk | Required action |
 |---|---|---|---|
 | CBT-SEC-01 | Inspected `submit_attempt()` checks in-progress status but does not itself compare current time with `expires_at`; expiry is handled in other lifecycle paths | Late submission/inconsistent expiry | Enforce expiry in domain transition under transaction/lock; define deadline boundary behavior |
-| CBT-SCORE-01 | Inspected scorer awards full marks when correct and zero when incorrect; configured negative-marking fields were not applied in that scorer | Incorrect result | Approve penalty policy, bounds, partial-credit and rounding; implement after policy decision |
+| CBT-SCORE-01 | The original scorer ignored the exam switch and per-question penalty | Incorrect result | Resolved in M3-B: apply frozen per-question penalties only when the exam enables negative marking; see policy below |
 | CBT-CONC-01 | Attempt creation, answer upsert, submission and scoring need race/idempotency review | Lost/duplicate work or invalid transitions | Add transaction/row-lock or compare-and-set and concurrent tests |
 | CBT-SEC-02 | Proctoring events are client-reported signals | False positive/tampering | Treat as evidence metadata; require human review, not automatic punishment |
 | CBT-OPS-01 | Historical test count came from merged PR report, not a new audit run | False confidence | Run current suite/CI on selected branch and record actual results |
 
 Do not silently change negative-marking semantics. Product policy must define wrong-answer penalty, multiple-select partial credit, unanswered behavior, score floor, decimal precision and whether penalty applies per item or section.
+
+
+## 2.1 Approved M3-B scoring policy
+
+- Negative marking is controlled by the exam-level `negative_marking` switch. When disabled, incorrect objective answers award zero regardless of a question's configured penalty.
+- When enabled, an incorrect, non-blank auto-gradable response receives the negative penalty frozen in that published question snapshot's `negative_marks` field.
+- The configured penalty must be finite, non-negative and no greater than that question's marks.
+- Correct objective responses receive the question's full effective marks.
+- Unanswered/blank responses receive zero and are not penalized. This includes empty answer rows created when a candidate flags a question without answering it.
+- Multiple-choice and other currently implemented objective types retain exact-match scoring. Partial credit is not introduced by M3-B.
+- Subjective/manual marking remains bounded from zero to the question's effective marks; negative subjective marks are not introduced.
+- The aggregate examination score and percentage are floored at zero. They cannot become negative.
+- Penalties are applied per question using the published snapshot, so later edits to the question bank cannot change an already-published exam's scoring.
+- Decimal arithmetic is retained; no floating-point scoring is introduced.
 
 ## 3. Authentication and authorization tests
 
