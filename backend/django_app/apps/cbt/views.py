@@ -23,6 +23,7 @@ from apps.core.responses import envelope, error_envelope
 from .models import (
     CBTExam,
     CBTImportJob,
+    CBTImportItem,
     CBTMedia,
     ExamAttempt,
     ExamCandidate,
@@ -40,6 +41,7 @@ from .serializers import (
     AttemptFlagSubmissionSerializer,
     CBTExamSerializer,
     CBTImportJobSerializer,
+    CBTImportItemPreviewSerializer,
     CBTMediaSerializer,
     ExamAttemptEventSerializer,
     ExamAttemptSerializer,
