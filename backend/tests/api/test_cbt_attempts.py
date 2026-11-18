@@ -74,7 +74,7 @@ def ready_exam(cbt_exam_fixture_set, cbt_question_factory, student_factory, staf
     class_subject_factory(class_arm=fs["class_arm"], subject=fs["subject"], teacher=teacher)
 
     candidate = add_candidate(exam=exam, student=student)
-    published = publish_exam(exam=exam, actor=None)
+    publish_exam(exam=exam, actor=None)
     return {**fs, "exam": published, "question": question, "student": student, "candidate": candidate}
 
 
@@ -195,8 +195,6 @@ def test_no_option_randomization_when_exam_disables_it(ready_exam):
     exam = ready_exam["exam"]
     exam.randomize_options = False
     exam.save(update_fields=["randomize_options"])
-    exam_question = exam.exam_questions.get()
-
     attempt = start_attempt(candidate=ready_exam["candidate"])
     assert attempt.option_orders == {}
 
