@@ -35,13 +35,18 @@ def _restore_tenant(fs):
     activate_organization(fs["school"].organization_id)
 
 
+# Patch the name imported by the management command, not the storage module
+# attribute: the command uses "from apps.core.storage import delete_document".
+_DELETE_DOCUMENT = "apps.cbt.management.commands.purge_cbt_import_sources.delete_document"
+
+
 @pytest.mark.django_db
 def test_retention_command_is_dry_run_by_default(cbt_fixture_set, user_factory, monkeypatch):
     fs = cbt_fixture_set
     user = user_factory(organization=fs["school"].organization)
     job = _terminal_job(fs, user)
     deleted = []
-    monkeypatch.setattr("apps.core.storage.delete_document", lambda key: deleted.append(key))
+    monkeypatch.setattr(_DELETE_DOCUMENT, lambda key: deleted.append(key))
     output = StringIO()
 
     call_command("purge_cbt_import_sources", stdout=output)
@@ -78,7 +83,7 @@ def test_retention_command_deletes_only_expired_terminal_sources(
         completed_at=timezone.now() - timedelta(days=45),
     )
     deleted = []
-    monkeypatch.setattr("apps.core.storage.delete_document", lambda key: deleted.append(key))
+    monkeypatch.setattr(_DELETE_DOCUMENT, lambda key: deleted.append(key))
 
     call_command("purge_cbt_import_sources", "--execute")
 
@@ -101,7 +106,7 @@ def test_retention_command_keeps_key_when_storage_deletion_fails(cbt_fixture_set
     def fail_delete(key):
         raise OSError("storage unavailable")
 
-    monkeypatch.setattr("apps.core.storage.delete_document", fail_delete)
+    monkeypatch.setattr(_DELETE_DOCUMENT, fail_delete)
     output = StringIO()
     errors = StringIO()
 
