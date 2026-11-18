@@ -181,3 +181,37 @@ def test_negative_marking_rejects_invalid_snapshot_penalty():
 
     with pytest.raises(ScoringError):
         grade_response(exam_question=eq, response={"selected_option_label": "wrong"})
+
+
+def test_blank_numeric_response_is_unanswered_even_when_negative_marking_is_enabled():
+    snapshot = _snapshot("numeric", [{"content": {"value": 42, "tolerance": 0}}])
+    snapshot["negative_marks"] = "1.00"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, marks = grade_response(exam_question=eq, response={})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_whitespace_only_response_is_unanswered():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "1.00"
+    eq = _FakeExamQuestion(snapshot)
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    correct, marks = grade_response(exam_question=eq, response={"selected_option_label": "   "})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_negative_penalty_cannot_exceed_question_marks():
+    snapshot = _snapshot("single_choice", [{"label": "A", "is_correct": True}])
+    snapshot["negative_marks"] = "6.00"
+    eq = _FakeExamQuestion(snapshot, marks="5.00")
+    eq.exam = type("ExamPolicy", (), {"negative_marking": True})()
+
+    with pytest.raises(ScoringError):
+        grade_response(exam_question=eq, response={"selected_option_label": "wrong"})
