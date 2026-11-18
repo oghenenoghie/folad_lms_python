@@ -112,11 +112,12 @@ def test_import_cancellation_is_tenant_scoped(
 
     assert response.status_code == 404
 
-    # Restore the owning tenant database context before asserting the row state.
-    # all_tenants bypasses the ORM manager filter, but PostgreSQL RLS remains active.
+    # The request middleware has left the connection scoped to the outsider.
+    # Use the same explicit, transaction-local RLS bypass as the audited
+    # platform-admin policy for this test-only postcondition; all_tenants alone
+    # bypasses the ORM filter, not PostgreSQL row-level security.
     with connection.cursor() as cursor:
-        cursor.execute("SELECT set_config('app.current_org', %s, true)", [str(fs["school"].organization_id)])
-        cursor.execute("SELECT set_config('app.platform_mode', 'false', true)")
+        cursor.execute("SELECT set_config('app.platform_mode', 'true', true)")
     assert CBTImportJob.all_tenants.filter(pk=job.pk, status="uploaded").exists()
 
 
