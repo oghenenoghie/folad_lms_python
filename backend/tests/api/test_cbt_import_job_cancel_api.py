@@ -110,8 +110,7 @@ def test_import_cancellation_is_tenant_scoped(
     )
 
     assert response.status_code == 404
-    job.refresh_from_db()
-    assert job.status == "uploaded"
+    assert CBTImportJob.all_tenants.filter(pk=job.pk, status="uploaded").exists()
 
 
 @pytest.mark.django_db
