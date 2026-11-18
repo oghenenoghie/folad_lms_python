@@ -39,7 +39,7 @@ def remove_event_immutability_trigger(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("cbt", "0001_initial"),
+        ("cbt", "0016_platform_mode_rls"),
     ]
 
     operations = [
