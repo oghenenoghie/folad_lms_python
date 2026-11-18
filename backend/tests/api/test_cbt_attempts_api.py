@@ -60,7 +60,7 @@ def ready_exam(
     exam.start_at = timezone.now() - timedelta(minutes=5)
     exam.end_at = timezone.now() + timedelta(hours=1)
     exam.duration_minutes = 30
-    exam.pass_mark = Decimal("3.00")
+    exam.pass_mark = Decimal("60.00")
     exam.save(update_fields=["start_at", "end_at", "duration_minutes", "pass_mark"])
 
     question = _single_choice_question(cbt_question_factory, fs)
