@@ -554,3 +554,32 @@ def test_staff_from_another_tenant_cannot_grade_an_answer(
     )
 
     assert response.status_code == 404
+
+@pytest.mark.django_db
+def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
+    api_client, ready_exam, other_organization, user_factory
+):
+    """Every staff-facing exam/question read path must respect the JWT tenant."""
+    exam = ready_exam["exam"]
+    question = ready_exam["question"]
+    other_tenant_staff = user_factory(
+        organization=other_organization,
+        email="cross-tenant-exam-reviewer@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "cross-tenant-exam-reviewer@example.com", "s3cret-pass!")
+    _grant(other_tenant_staff, "cbt_exams.view", "cbt_questions.view")
+
+    responses = {
+        "exam_detail": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}"),
+        "exam_analytics": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/analytics"),
+        "exam_live_status": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/live"),
+        "question_detail": api_client.get(f"/api/v1/cbt/questions/{question.public_id}"),
+    }
+
+    assert {name: response.status_code for name, response in responses.items()} == {
+        "exam_detail": 404,
+        "exam_analytics": 404,
+        "exam_live_status": 404,
+        "question_detail": 404,
+    }
