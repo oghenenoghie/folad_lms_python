@@ -3,7 +3,7 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from apps.cbt.models import CBTImportIssue, CBTImportItem, CBTImportJob
-from apps.tenancy.context import activate_organization
+from apps.tenancy.context import activate_organization, activate_platform_mode
 
 
 @pytest.mark.django_db
