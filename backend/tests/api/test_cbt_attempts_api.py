@@ -569,7 +569,7 @@ def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
         password="s3cret-pass!",
     )
     _login(api_client, "cross-tenant-exam-reviewer@example.com", "s3cret-pass!")
-    _grant(other_tenant_staff, "cbt_exams.view", "cbt_questions.view")
+    _grant(other_tenant_staff, "cbt_exams.view", "cbt_questions.view", "cbt_attempts.view")
 
     responses = {
         "exam_detail": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}"),
