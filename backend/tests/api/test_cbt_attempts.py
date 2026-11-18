@@ -671,6 +671,30 @@ def test_attempt_event_retry_with_same_client_id_is_idempotent(ready_exam):
 
 
 @pytest.mark.django_db
+def test_attempt_event_retry_is_acknowledged_after_submission(ready_exam):
+    import uuid
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    client_event_id = uuid.uuid4()
+    event = log_attempt_event(
+        attempt=attempt,
+        event_type="tab_hidden",
+        client_event_id=client_event_id,
+    )
+    submit_attempt(attempt=attempt, actor=None)
+
+    replay = log_attempt_event(
+        attempt=attempt,
+        event_type="tab_hidden",
+        client_event_id=client_event_id,
+    )
+
+    assert replay.pk == event.pk
+    assert replay._was_created is False
+    assert attempt.events.count() == 1
+
+
+@pytest.mark.django_db
 def test_attempt_event_idempotency_key_cannot_change_payload(ready_exam):
     import uuid
 
