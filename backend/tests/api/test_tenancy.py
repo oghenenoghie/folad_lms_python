@@ -82,3 +82,54 @@ def test_rls_blocks_all_rows_with_sentinel_context(organization, other_organizat
         (count,) = cursor.fetchone()
 
     assert count == 0
+
+
+
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.django_db
+def test_admin_platform_mode_is_cleared_after_request():
+    from types import SimpleNamespace
+
+    from django.http import HttpResponse
+    from django.test import RequestFactory
+
+    from apps.tenancy.middleware import AdminPlatformModeMiddleware
+
+    request = RequestFactory().get("/admin/")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=True)
+
+    def response(_request):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_setting('app.platform_mode', true)")
+            assert cursor.fetchone()[0] == "true"
+        return HttpResponse("admin")
+
+    result = AdminPlatformModeMiddleware(response)(request)
+    assert result.status_code == 200
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting('app.platform_mode', true)")
+        assert cursor.fetchone()[0] == "false"
+
+
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.django_db
+def test_admin_platform_mode_is_cleared_when_request_raises():
+    from types import SimpleNamespace
+
+    from django.test import RequestFactory
+
+    from apps.tenancy.middleware import AdminPlatformModeMiddleware
+
+    request = RequestFactory().get("/admin/")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=True)
+
+    def response(_request):
+        raise RuntimeError("simulated admin view failure")
+
+    with pytest.raises(RuntimeError, match="simulated admin view failure"):
+        AdminPlatformModeMiddleware(response)(request)
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting('app.platform_mode', true)")
+        assert cursor.fetchone()[0] == "false"
