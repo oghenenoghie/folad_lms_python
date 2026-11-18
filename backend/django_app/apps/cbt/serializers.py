@@ -9,6 +9,8 @@ from apps.students.models import Student
 from .models import (
     CBTExam,
     CBTImportJob,
+    CBTImportIssue,
+    CBTImportItem,
     CBTMedia,
     ExamAttempt,
     ExamAttemptEvent,
