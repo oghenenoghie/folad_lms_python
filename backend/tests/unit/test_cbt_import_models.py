@@ -3,7 +3,7 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from apps.cbt.models import CBTImportIssue, CBTImportItem, CBTImportJob
-from apps.tenancy.context import activate_organization
+from apps.tenancy.context import activate_organization, activate_platform_mode
 
 
 @pytest.mark.django_db
@@ -160,3 +160,9 @@ def test_import_jobs_default_manager_is_tenant_scoped(cbt_fixture_set, user_fact
 
     activate_organization(other_organization.id)
     assert CBTImportJob.objects.count() == 0
+    # The unscoped manager bypasses TenantManager, but PostgreSQL RLS still applies.
+    assert CBTImportJob.all_tenants.count() == 0
+
+    # Cross-tenant visibility requires the audited platform-mode RLS bypass.
+    activate_platform_mode()
+    assert CBTImportJob.all_tenants.count() == 1
