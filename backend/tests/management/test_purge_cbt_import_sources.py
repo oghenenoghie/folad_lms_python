@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.utils import timezone
 
 from apps.cbt.models import CBTImportJob
+from apps.tenancy.context import activate_organization
 
 
 def _terminal_job(fs, user, *, status="completed", age_days=31):
@@ -17,15 +18,21 @@ def _terminal_job(fs, user, *, status="completed", age_days=31):
         school=fs["school"],
         subject=fs["subject"],
         class_level=fs["class_level"],
-        source_name="questions.csv",
+        source_name=f"questions-{age_days}.csv",
         source_format="csv",
-        storage_key=f"private/import-{user.pk}-{status}",
+        storage_key=f"private/import-{user.pk}-{status}-{age_days}",
         source_sha256="d" * 64,
         source_size_bytes=128,
-        idempotency_key=f"retention-{user.pk}-{status}",
+        idempotency_key=f"retention-{user.pk}-{status}-{age_days}",
         status=status,
         completed_at=timezone.now() - timedelta(days=age_days),
     )
+
+
+def _restore_tenant(fs):
+    # The management command deliberately clears its connection-scoped RLS
+    # context before returning. Restore the fixture tenant before ORM asserts.
+    activate_organization(fs["school"].organization_id)
 
 
 @pytest.mark.django_db
@@ -39,6 +46,7 @@ def test_retention_command_is_dry_run_by_default(cbt_fixture_set, user_factory, 
 
     call_command("purge_cbt_import_sources", stdout=output)
 
+    _restore_tenant(fs)
     job.refresh_from_db()
     assert job.storage_key.startswith("private/")
     assert deleted == []
@@ -52,7 +60,7 @@ def test_retention_command_deletes_only_expired_terminal_sources(
     fs = cbt_fixture_set
     user = user_factory(organization=fs["school"].organization)
     expired = _terminal_job(fs, user)
-    recent = _terminal_job(fs, user_factory(organization=fs["school"].organization), age_days=5)
+    recent = _terminal_job(fs, user, age_days=5)
     active = CBTImportJob.objects.create(
         organization=fs["school"].organization,
         created_by=user,
@@ -74,11 +82,12 @@ def test_retention_command_deletes_only_expired_terminal_sources(
 
     call_command("purge_cbt_import_sources", "--execute")
 
+    _restore_tenant(fs)
     expired.refresh_from_db()
     recent.refresh_from_db()
     active.refresh_from_db()
     assert expired.storage_key == ""
-    assert deleted == [f"private/import-{user.pk}-completed"]
+    assert deleted == [f"private/import-{user.pk}-completed-31"]
     assert recent.storage_key.startswith("private/")
     assert active.storage_key == "private/active"
 
@@ -98,6 +107,7 @@ def test_retention_command_keeps_key_when_storage_deletion_fails(cbt_fixture_set
 
     call_command("purge_cbt_import_sources", "--execute", stdout=output, stderr=errors)
 
+    _restore_tenant(fs)
     job.refresh_from_db()
     assert job.storage_key.startswith("private/")
     assert "1 failed" in output.getvalue()
