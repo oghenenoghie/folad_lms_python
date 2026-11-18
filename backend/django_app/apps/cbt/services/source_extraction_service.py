@@ -32,8 +32,6 @@ class ExtractedImportRow:
 
 def _headers(values) -> list[str]:
     headers = [str(value).strip().lower() if value is not None else "" for value in values]
-    while headers and not headers[-1]:
-        headers.pop()
     if not headers or any(not header for header in headers):
         raise SourceExtractionError("source header row contains an empty column name")
     if len(headers) != len(set(headers)):
@@ -75,7 +73,9 @@ def _build_rows(headers, rows, *, locator_key: str, sheet_name: str | None = Non
         if source_row > MAX_ROWS + 1:
             raise SourceExtractionError(f"source exceeds the {MAX_ROWS:,}-row import limit")
         values = list(values)
-        if len(values) > len(headers) and any(value not in (None, "") for value in values[len(headers):]):
+        if len(values) > len(headers) and (
+            locator_key == "row" and any(value not in (None, "") for value in values[len(headers):])
+        ):
             raise SourceExtractionError(
                 f"source row {source_row} contains data beyond the header columns"
             )
