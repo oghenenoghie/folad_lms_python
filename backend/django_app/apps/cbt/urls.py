@@ -13,6 +13,7 @@ from .views import (
     CBTExamListCreateView,
     CBTExamPublishView,
     CBTImportJobDetailView,
+    CBTImportJobPreviewView,
     CBTImportJobListCreateView,
     CBTMediaDetailView,
     CBTMediaListView,
@@ -51,6 +52,7 @@ from .views import (
 urlpatterns = [
     path("cbt/import-jobs", CBTImportJobListCreateView.as_view(), name="cbt-import-job-list-create"),
     path("cbt/import-jobs/<uuid:public_id>", CBTImportJobDetailView.as_view(), name="cbt-import-job-detail"),
+    path("cbt/import-jobs/<uuid:public_id>/preview", CBTImportJobPreviewView.as_view(), name="cbt-import-job-preview"),
     path("cbt/topics", TopicListCreateView.as_view(), name="cbt-topic-list-create"),
     path("cbt/topics/<uuid:public_id>", TopicDetailView.as_view(), name="cbt-topic-detail"),
     path("cbt/questions", QuestionListCreateView.as_view(), name="cbt-question-list-create"),

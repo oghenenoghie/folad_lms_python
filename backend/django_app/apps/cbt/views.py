@@ -23,6 +23,7 @@ from apps.core.responses import envelope, error_envelope
 from .models import (
     CBTExam,
     CBTImportJob,
+    CBTImportItem,
     CBTMedia,
     ExamAttempt,
     ExamCandidate,
@@ -40,6 +41,7 @@ from .serializers import (
     AttemptFlagSubmissionSerializer,
     CBTExamSerializer,
     CBTImportJobSerializer,
+    CBTImportItemPreviewSerializer,
     CBTMediaSerializer,
     ExamAttemptEventSerializer,
     ExamAttemptSerializer,
@@ -1213,3 +1215,44 @@ class CBTImportJobDetailView(APIView):
         data["processing_status"] = "not_configured"
         data["processing_dispatched"] = False
         return envelope(data)
+
+
+
+class CBTImportJobPreviewView(APIView):
+    """Paginated, read-only preview of extracted rows and their diagnostics."""
+
+    PAGE_SIZE_DEFAULT = 50
+    PAGE_SIZE_MAX = 100
+
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_questions.view")()]
+
+    def get(self, request, public_id):
+        job = generics.get_object_or_404(CBTImportJob.objects, public_id=public_id)
+        try:
+            page = int(request.query_params.get("page", "1"))
+            page_size = int(request.query_params.get("page_size", str(self.PAGE_SIZE_DEFAULT)))
+        except (TypeError, ValueError):
+            return error_envelope("page and page_size must be positive integers", status=400)
+        if page < 1 or page_size < 1:
+            return error_envelope("page and page_size must be positive integers", status=400)
+        page_size = min(page_size, self.PAGE_SIZE_MAX)
+
+        items = (
+            CBTImportItem.objects.filter(job=job)
+            .prefetch_related("issues", "committed_question")
+            .order_by("sequence")
+        )
+        total = items.count()
+        start = (page - 1) * page_size
+        page_items = items[start:start + page_size]
+        return envelope({
+            "job": CBTImportJobSerializer(job).data,
+            "items": CBTImportItemPreviewSerializer(page_items, many=True).data,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total,
+                "total_pages": (total + page_size - 1) // page_size,
+            },
+        })

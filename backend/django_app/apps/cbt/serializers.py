@@ -9,6 +9,8 @@ from apps.students.models import Student
 from .models import (
     CBTExam,
     CBTImportJob,
+    CBTImportIssue,
+    CBTImportItem,
     CBTMedia,
     ExamAttempt,
     ExamAttemptEvent,
@@ -386,3 +388,34 @@ class CBTImportJobSerializer(serializers.ModelSerializer):
             "completed_at",
         ]
         read_only_fields = fields
+
+
+class CBTImportIssueSerializer(serializers.ModelSerializer):
+    """Safe row-level diagnostics for a staff import preview."""
+
+    class Meta:
+        model = CBTImportIssue
+        fields = ["severity", "code", "message", "source_locator", "created_at"]
+        read_only_fields = fields
+
+
+class CBTImportItemPreviewSerializer(serializers.ModelSerializer):
+    """Canonical candidate question shown to an authorized importer."""
+
+    issues = CBTImportIssueSerializer(many=True, read_only=True)
+    committed_question = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CBTImportItem
+        fields = [
+            "sequence",
+            "source_locator",
+            "payload",
+            "validation_status",
+            "committed_question",
+            "issues",
+        ]
+        read_only_fields = fields
+
+    def get_committed_question(self, obj):
+        return str(obj.committed_question.public_id) if obj.committed_question_id else None
