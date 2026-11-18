@@ -51,6 +51,7 @@ def test_department_admin_add_accepts_existing_school_with_no_ambient_org_contex
     assert response.status_code == 302, (
         response.context["adminform"].form.errors if response.status_code == 200 else response.status_code
     )
+    activate_organization(organization.id)
     dept = Department.all_tenants.get(code="SCI")
     assert dept.school_id == school.id
 
@@ -82,6 +83,7 @@ def test_department_admin_rejects_duplicate_school_code_with_form_error_not_500(
 
     assert response.status_code == 200
     assert "already exists" in str(response.context["adminform"].form.errors)
+    activate_organization(organization.id)
     assert Department.all_tenants.filter(school=school, code="SCI").count() == 1
 
 

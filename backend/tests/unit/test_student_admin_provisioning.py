@@ -75,6 +75,7 @@ def test_student_admin_add_auto_provisions_login(
         },
     )
 
+    activate_organization(organization.id)
     student = Student.all_tenants.get(admission_number="A200")
     assert student.user_id is not None
     assert student.user.email.endswith("@students.local")
@@ -103,6 +104,7 @@ def test_student_admin_add_with_email_reuses_it_and_reports_conflict(
         },
     )
 
+    activate_organization(organization.id)
     student = Student.all_tenants.get(admission_number="A201")
     assert student.user_id is None
 
@@ -132,6 +134,7 @@ def test_student_admin_accepts_a_hand_typed_dash_abbreviated_date(
         },
     )
 
+    activate_organization(organization.id)
     student = Student.all_tenants.get(admission_number="A202")
     assert str(student.date_of_birth) == "2017-08-02"
 
@@ -195,6 +198,7 @@ def test_student_admin_add_creates_enrollment_and_guardian_link_inline(
         [fs.formset.errors for fs in response.context.get("inline_admin_formsets", [])],
     )
 
+    activate_organization(organization.id)
     student = Student.all_tenants.get(admission_number="A210")
     enrollment = Enrollment.all_tenants.get(student=student)
     assert enrollment.class_arm_id == class_arm.id
@@ -231,6 +235,7 @@ def test_student_admin_photo_upload_and_removal(
             "photo": photo,
         },
     )
+    activate_organization(organization.id)
     student = Student.all_tenants.get(admission_number="A220")
     assert student.photo_storage_key
 
