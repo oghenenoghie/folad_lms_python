@@ -409,3 +409,70 @@ def test_stale_heartbeat_cannot_overwrite_a_completed_submission(ready_exam):
 
     assert submitted.status == "submitted"
     assert checked.status == "submitted"
+
+
+@pytest.mark.django_db
+def test_answer_endpoint_rejects_invalid_time_spent_and_non_object_response(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    invalid_time = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {
+            "exam_question": str(exam_question.public_id),
+            "response": {"selected_option_label": "B"},
+            "time_spent_seconds": "not-a-number",
+        },
+        format="json",
+    )
+    assert invalid_time.status_code == 400
+
+    invalid_response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": ["not", "an", "object"]},
+        format="json",
+    )
+    assert invalid_response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_flag_endpoint_parses_false_as_false_not_truthy_string(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/flag",
+        {"exam_question": str(exam_question.public_id), "flagged": "false"},
+        format="json",
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["data"]["flagged"] is False
+
+
+@pytest.mark.django_db
+def test_answer_endpoint_rejects_negative_time_spent(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {
+            "exam_question": str(exam_question.public_id),
+            "response": {"selected_option_label": "B"},
+            "time_spent_seconds": -1,
+        },
+        format="json",
+    )
+    assert response.status_code == 400
