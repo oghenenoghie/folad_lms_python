@@ -89,5 +89,7 @@ jobs:
         run: uv run python django_app/manage.py check
       - name: Check migration drift
         run: uv run python django_app/manage.py makemigrations --check --dry-run
+      - name: Lint backend and CBT tests
+        run: uv run ruff check django_app/apps/cbt tests/api/test_cbt_attempts.py
       - name: Run backend test suite
         run: uv run pytest -q
