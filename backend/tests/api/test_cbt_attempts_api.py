@@ -555,6 +555,7 @@ def test_staff_from_another_tenant_cannot_grade_an_answer(
 
     assert response.status_code == 404
 
+
 @pytest.mark.django_db
 def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
     api_client, ready_exam, other_organization, user_factory
