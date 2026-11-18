@@ -316,6 +316,25 @@ class StudentAnswerSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AttemptAnswerSubmissionSerializer(serializers.Serializer):
+    """Strict input contract for candidate answer writes."""
+
+    exam_question = serializers.UUIDField()
+    response = serializers.JSONField()
+    time_spent_seconds = serializers.IntegerField(required=False, default=0, min_value=0)
+
+    def validate_response(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("response must be a JSON object")
+        return value
+
+
+class AttemptFlagSubmissionSerializer(serializers.Serializer):
+    """Strict input contract for candidate question flags."""
+
+    exam_question = serializers.UUIDField()
+    flagged = serializers.BooleanField(required=False, default=True)
+
 class ExamAttemptEventSerializer(serializers.ModelSerializer):
     """`event_type` is write-once-per-row (a client reports what happened;
     nothing about a logged event is ever edited), so this is writable only
