@@ -33,7 +33,7 @@ def test_worker_extracts_source_under_persisted_tenant_and_is_idempotent(
 ):
     from apps.tenancy.models import Organization
 
-    content = b"text,correct,option_a,option_b\\nWhat is 2+2?,B,3,4\\n"
+    content = b"text,correct,option_a,option_b\nWhat is 2+2?,B,3,4\n"
     monkeypatch.setattr("apps.core.storage.get_file_bytes", lambda key: content)
 
     first = extract_cbt_import_job.run(str(import_job.public_id), import_job.organization_id)
