@@ -22,8 +22,8 @@ from apps.core.responses import envelope, error_envelope
 
 from .models import (
     CBTExam,
-    CBTMedia,
     CBTImportJob,
+    CBTMedia,
     ExamAttempt,
     ExamCandidate,
     ExamQuestion,
@@ -39,8 +39,8 @@ from .serializers import (
     AttemptAnswerSubmissionSerializer,
     AttemptFlagSubmissionSerializer,
     CBTExamSerializer,
-    CBTMediaSerializer,
     CBTImportJobSerializer,
+    CBTMediaSerializer,
     ExamAttemptEventSerializer,
     ExamAttemptSerializer,
     ExamCandidateSerializer,
@@ -1138,7 +1138,11 @@ class CBTImportJobListCreateView(APIView):
             CBTImportJob.objects.select_related("school", "subject", "class_level")
             .order_by("-created_at")[:100]
         )
-        return envelope(CBTImportJobSerializer(jobs, many=True).data)
+        data = CBTImportJobSerializer(jobs, many=True).data
+        for item in data:
+            item["processing_status"] = "not_configured"
+            item["processing_dispatched"] = False
+        return envelope(data)
 
     def post(self, request):
         from .services.source_upload_service import (
