@@ -227,7 +227,11 @@ def create_source_import_job(
         winner = CBTImportJob.objects.filter(organization=organization, idempotency_key=key).first()
         if winner and _matches_existing(winner, source=source, school=school, subject=subject, class_level=class_level):
             return winner, False
-        raise ImportIdempotencyConflict("Idempotency-Key was concurrently used for a different upload or target")
+        if winner:
+            raise ImportIdempotencyConflict(
+                "Idempotency-Key was concurrently used for a different upload or target"
+            )
+        raise
     except Exception:
         delete_document(stored_key)
         raise
