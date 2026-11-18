@@ -48,6 +48,12 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://folad_ci:folad_ci_password@127.0.0.1:5432/test_sms
+      # FastAPI edge settings use POSTGRES_* rather than Django's DATABASE_URL.
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: test_sms
+      POSTGRES_USER: folad_ci
+      POSTGRES_PASSWORD: folad_ci_password
       DB_SSL_REQUIRE: 'false'
       REDIS_URL: redis://127.0.0.1:6379/0
       DJANGO_SECRET_KEY: ci-only-not-a-production-secret
