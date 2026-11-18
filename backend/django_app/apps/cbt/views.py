@@ -36,10 +36,10 @@ from .models import (
     Topic,
 )
 from .serializers import (
-    CBTExamSerializer,
-    CBTMediaSerializer,
     AttemptAnswerSubmissionSerializer,
     AttemptFlagSubmissionSerializer,
+    CBTExamSerializer,
+    CBTMediaSerializer,
     ExamAttemptEventSerializer,
     ExamAttemptSerializer,
     ExamCandidateSerializer,
