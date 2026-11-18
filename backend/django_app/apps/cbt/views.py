@@ -200,47 +200,106 @@ class QuestionDuplicateView(APIView):
 
 
 class QuestionBulkImportView(APIView):
-    """Multipart CSV upload — one Question per row (single_choice/
-    multiple_choice/true_false only; see question_service.
-    bulk_import_questions for the exact column shape and why richer
-    block/option content is out of scope for a flat CSV). A bad row is
-    reported, not fatal to the rest of the sheet.
-    """
+    """Import a bounded CSV or XLSX question sheet; dry-run previews never write."""
+
+    MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+    MAX_ROWS = 5000
+    REQUIRED_HEADERS = {"text", "correct"}
 
     def get_permissions(self):
         return [IsAuthenticated(), require_permission("cbt_questions.create")()]
 
-    def post(self, request):
+    def _read_rows(self, upload):
         import csv
         import io
+        from pathlib import Path
 
+        suffix = Path(upload.name or "").suffix.lower()
+        raw = upload.read(self.MAX_UPLOAD_BYTES + 1)
+        if len(raw) > self.MAX_UPLOAD_BYTES:
+            raise ValueError("file exceeds the 10 MB import limit")
+
+        if suffix == ".csv":
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise ValueError("CSV must use UTF-8 encoding") from exc
+            reader = csv.DictReader(io.StringIO(text))
+            headers = reader.fieldnames or []
+            rows = list(reader)
+        elif suffix == ".xlsx":
+            try:
+                from openpyxl import load_workbook
+                workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+                sheet = workbook.active
+                values = sheet.iter_rows(values_only=True)
+                headers = [str(value).strip().lower() if value is not None else "" for value in next(values, ())]
+                rows = []
+                for values_row in values:
+                    if len(rows) >= self.MAX_ROWS:
+                        raise ValueError("worksheet exceeds the 5,000 row import limit")
+                    rows.append({
+                        headers[index]: ("" if value is None else str(value).strip())
+                        for index, value in enumerate(values_row)
+                        if index < len(headers) and headers[index]
+                    })
+                workbook.close()
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise ValueError("could not read XLSX workbook; verify that it is a valid .xlsx file") from exc
+        else:
+            raise ValueError("only .csv and .xlsx files are supported")
+
+        normalized = [str(header).strip().lower() if header is not None else "" for header in headers]
+        if not normalized or any(not header for header in normalized):
+            raise ValueError("the first row must contain non-empty column headers")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("column headers must be unique")
+        missing = self.REQUIRED_HEADERS - set(normalized)
+        if missing:
+            raise ValueError(f"missing required column(s): {', '.join(sorted(missing))}")
+        if len(rows) > self.MAX_ROWS:
+            raise ValueError("file exceeds the 5,000 row import limit")
+        return [
+            {str(key).strip().lower(): ("" if value is None else str(value).strip()) for key, value in row.items()}
+            for row in rows
+        ]
+
+    def post(self, request):
         upload = request.FILES.get("file")
         if upload is None:
             return error_envelope("no file provided", status=400)
+        try:
+            rows = self._read_rows(upload)
+        except ValueError as exc:
+            return error_envelope(str(exc), status=400)
+
         subject = generics.get_object_or_404(Subject.objects, public_id=request.data.get("subject"))
         class_level = generics.get_object_or_404(ClassLevel.objects, public_id=request.data.get("class_level"))
-        try:
-            text = upload.read().decode("utf-8-sig")
-        except UnicodeDecodeError:
-            return error_envelope("file must be UTF-8 encoded CSV", status=400)
-
-        rows = list(csv.DictReader(io.StringIO(text)))
+        dry_run_raw = request.data.get("dry_run", "false")
+        dry_run = dry_run_raw is True or str(dry_run_raw).strip().lower() in {"1", "true", "yes"}
         result = question_service.bulk_import_questions(
             organization=request.user.organization,
             actor=request.user,
             subject=subject,
             class_level=class_level,
             rows=rows,
+            dry_run=dry_run,
         )
+        data = {
+            "created": QuestionSerializer(result["created"], many=True).data,
+            "preview": result["preview"],
+            "errors": result["errors"],
+            "created_count": len(result["created"]),
+            "valid_count": len(result["preview"]) if dry_run else len(result["created"]),
+            "error_count": len(result["errors"]),
+            "dry_run": dry_run,
+        }
         return envelope(
-            {
-                "created": QuestionSerializer(result["created"], many=True).data,
-                "errors": result["errors"],
-                "created_count": len(result["created"]),
-                "error_count": len(result["errors"]),
-            },
-            message="bulk import completed",
-            status=201 if result["created"] else 200,
+            data,
+            message="question import preview completed" if dry_run else "bulk import completed",
+            status=200 if dry_run or not result["created"] else 201,
         )
 
 
