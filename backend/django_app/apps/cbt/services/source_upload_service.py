@@ -71,7 +71,7 @@ def _validate_csv(content: bytes) -> None:
     if "\x00" in decoded:
         raise InvalidSourceUpload("CSV contains binary or NUL characters")
     try:
-        reader = csv.reader(io.StringIO(decoded, newline=""))
+        reader = csv.reader(io.StringIO(decoded, newline=""), strict=True)
         headers = _validate_headers(next(reader, []))
         for row_number, row in enumerate(reader, start=2):
             if row_number > MAX_ROWS + 1:
@@ -225,7 +225,9 @@ def create_source_import_job(
     except IntegrityError:
         delete_document(stored_key)
         winner = CBTImportJob.objects.filter(organization=organization, idempotency_key=key).first()
-        if winner and _matches_existing(winner, source=source, school=school, subject=subject, class_level=class_level):
+        if winner and _matches_existing(
+            winner, source=source, school=school, subject=subject, class_level=class_level
+        ):
             return winner, False
         if winner:
             raise ImportIdempotencyConflict(
