@@ -222,3 +222,31 @@ def test_bulk_import_endpoint_supports_xlsx_and_dry_run(
     assert data["valid_count"] == 1
     assert data["preview"][0]["text"] == "What is 3+3?"
     assert Question.objects.count() == 0
+
+
+
+@pytest.mark.parametrize(
+    "filename,content,error",
+    [
+        ("questions.txt", b"text,correct\\nQ,A\\n", "only .csv and .xlsx files are supported"),
+        ("questions.csv", b"\\xff,correct\\nQ,A\\n", "CSV must use UTF-8 encoding"),
+        ("questions.csv", b"text,text,correct\\nQ,Q,A\\n", "column headers must be unique"),
+        ("questions.csv", b"text,option_a,option_b\\nQ,A,B\\n", "missing required column"),
+    ],
+)
+def test_bulk_import_parser_rejects_invalid_csv_inputs(filename, content, error):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from apps.cbt.views import QuestionBulkImportView
+
+    upload = SimpleUploadedFile(filename, content)
+    with pytest.raises(ValueError, match=error):
+        QuestionBulkImportView()._read_rows(upload)
+
+
+def test_bulk_import_parser_rejects_upload_over_limit():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from apps.cbt.views import QuestionBulkImportView
+
+    upload = SimpleUploadedFile("large.csv", b"x" * (QuestionBulkImportView.MAX_UPLOAD_BYTES + 1))
+    with pytest.raises(ValueError, match="10 MB import limit"):
+        QuestionBulkImportView()._read_rows(upload)
