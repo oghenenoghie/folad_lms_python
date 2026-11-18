@@ -1206,6 +1206,6 @@ class CBTImportJobDetailView(APIView):
             public_id=public_id,
         )
         data = CBTImportJobSerializer(job).data
-        data["processing_status"] = "not_configured" if job.status == "uploaded" else "managed"
+        data["processing_status"] = "not_configured"
         data["processing_dispatched"] = False
         return envelope(data)
