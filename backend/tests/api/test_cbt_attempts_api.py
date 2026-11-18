@@ -417,7 +417,7 @@ def test_candidate_cannot_access_attempt_from_another_tenant(
     from apps.cbt.services.attempt_service import start_attempt
 
     attempt = start_attempt(candidate=ready_exam["candidate"])
-    other_tenant_student_user = user_factory(
+    user_factory(
         organization=other_organization,
         email="other-tenant-student@example.com",
         password="s3cret-pass!",
