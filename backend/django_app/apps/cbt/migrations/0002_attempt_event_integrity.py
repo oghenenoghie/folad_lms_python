@@ -12,7 +12,7 @@ def install_event_immutability_trigger(apps, schema_editor):
         RETURNS trigger AS $$
         BEGIN
             RAISE EXCEPTION 'CBT attempt events are append-only'
-                USING ERRCODE = '55000';
+                USING ERRCODE = '23514';
         END;
         $$ LANGUAGE plpgsql;
         """
