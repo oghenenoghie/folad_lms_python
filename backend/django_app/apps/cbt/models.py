@@ -701,3 +701,178 @@ class ExamAttemptEvent(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.attempt} - {self.event_type}"
+
+
+# Durable question-import workflow (M4-B). Parsing and question creation are
+# deliberately separate: import items retain provenance and validated
+# intermediate payloads until an authorized, explicit commit creates drafts.
+CBT_IMPORT_SOURCE_FORMATS = [
+    ("csv", "CSV"),
+    ("xlsx", "Excel workbook"),
+    ("docx", "Word document"),
+    ("pdf", "PDF document"),
+]
+
+CBT_IMPORT_JOB_STATUSES = [
+    ("uploaded", "Uploaded"),
+    ("queued", "Queued"),
+    ("extracting", "Extracting"),
+    ("needs_mapping", "Needs Mapping"),
+    ("validating", "Validating"),
+    ("ready_to_commit", "Ready to Commit"),
+    ("committing", "Committing"),
+    ("completed", "Completed"),
+    ("completed_with_errors", "Completed with Errors"),
+    ("failed", "Failed"),
+    ("cancelled", "Cancelled"),
+]
+
+CBT_IMPORT_ITEM_STATUSES = [
+    ("pending", "Pending"),
+    ("valid", "Valid"),
+    ("invalid", "Invalid"),
+    ("warning", "Warning"),
+]
+
+CBT_IMPORT_ISSUE_SEVERITIES = [
+    ("error", "Error"),
+    ("warning", "Warning"),
+    ("info", "Information"),
+]
+
+
+class CBTImportJob(BaseModel):
+    """One tenant-scoped source upload and its durable import lifecycle.
+
+    A job targets one subject and class level. Its opaque storage key is
+    never exposed by serializers. Question creation is deferred until an
+    explicit commit and remains delegated to question_service.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    # Override BaseModel.created_by: an import job must always have an
+    # accountable initiating user, and deleting that user must not erase
+    # the provenance record.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    source_name = models.CharField(max_length=255)
+    source_format = models.CharField(max_length=10, choices=CBT_IMPORT_SOURCE_FORMATS)
+    storage_key = models.CharField(max_length=500)
+    source_sha256 = models.CharField(max_length=64)
+    source_size_bytes = models.PositiveBigIntegerField()
+    idempotency_key = models.CharField(max_length=128)
+    parser_version = models.CharField(max_length=40, default="v1")
+    status = models.CharField(max_length=24, choices=CBT_IMPORT_JOB_STATUSES, default="uploaded")
+    subject = models.ForeignKey("academics.Subject", on_delete=models.PROTECT, related_name="cbt_import_jobs")
+    class_level = models.ForeignKey(
+        "academics.ClassLevel", on_delete=models.PROTECT, related_name="cbt_import_jobs"
+    )
+    mapping = models.JSONField(default=dict, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    failure_code = models.CharField(max_length=64, blank=True, default="")
+    failure_message = models.TextField(blank=True, default="")
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_import_job"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "idempotency_key"],
+                name="uq_cbt_import_org_idem",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["organization", "status", "created_at"], name="cbt_imp_job_status_idx"),
+            models.Index(fields=["organization", "source_sha256"], name="cbt_imp_job_hash_idx"),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.source_name} ({self.status})"
+
+
+class CBTImportItem(BaseModel):
+    """A parser-produced candidate question, not yet a Question row.
+
+    payload uses a canonical structured representation; source_locator
+    identifies its original row, worksheet, page or paragraph. A committed
+    item points to the single draft Question created for it.
+    """
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    job = models.ForeignKey(CBTImportJob, on_delete=models.CASCADE, related_name="items")
+    sequence = models.PositiveIntegerField()
+    source_locator = models.JSONField(default=dict, blank=True)
+    source_fingerprint = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict, blank=True)
+    validation_status = models.CharField(
+        max_length=10, choices=CBT_IMPORT_ITEM_STATUSES, default="pending"
+    )
+    committed_question = models.ForeignKey(
+        Question,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="cbt_import_items",
+    )
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_import_item"
+        constraints = [
+            models.UniqueConstraint(fields=["job", "sequence"], name="uq_cbt_imp_item_sequence"),
+            models.UniqueConstraint(fields=["job", "source_fingerprint"], name="uq_cbt_imp_item_fingerprint"),
+        ]
+        indexes = [
+            models.Index(
+                fields=["organization", "job", "validation_status"],
+                name="cbt_imp_item_status_idx",
+            ),
+        ]
+        ordering = ["job", "sequence"]
+
+    def __str__(self) -> str:
+        return f"{self.job} item {self.sequence}"
+
+
+class CBTImportIssue(BaseModel):
+    """A durable, safe diagnostic attached to an import job or item."""
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    job = models.ForeignKey(CBTImportJob, on_delete=models.CASCADE, related_name="issues")
+    item = models.ForeignKey(
+        CBTImportItem,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="issues",
+    )
+    severity = models.CharField(max_length=10, choices=CBT_IMPORT_ISSUE_SEVERITIES)
+    code = models.CharField(max_length=80)
+    message = models.TextField()
+    source_locator = models.JSONField(default=dict, blank=True)
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_import_issue"
+        indexes = [
+            models.Index(
+                fields=["organization", "job", "created_at"],
+                name="cbt_imp_issue_job_idx",
+            ),
+        ]
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.job} - {self.severity}: {self.code}"
