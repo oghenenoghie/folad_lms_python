@@ -8,6 +8,7 @@ from apps.students.models import Student
 
 from .models import (
     CBTExam,
+    CBTImportJob,
     CBTMedia,
     ExamAttempt,
     ExamAttemptEvent,
@@ -357,3 +358,31 @@ class ExamAttemptEventSerializer(serializers.ModelSerializer):
         if len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 4096:
             raise serializers.ValidationError("metadata must not exceed 4096 bytes")
         return value
+
+
+class CBTImportJobSerializer(serializers.ModelSerializer):
+    """Safe job metadata; never expose private storage keys or signed URLs."""
+
+    school = serializers.CharField(source="school.public_id", read_only=True)
+    subject = serializers.CharField(source="subject.public_id", read_only=True)
+    class_level = serializers.CharField(source="class_level.public_id", read_only=True)
+
+    class Meta:
+        model = CBTImportJob
+        fields = [
+            "public_id",
+            "school",
+            "subject",
+            "class_level",
+            "source_name",
+            "source_format",
+            "source_size_bytes",
+            "status",
+            "summary",
+            "failure_code",
+            "failure_message",
+            "created_at",
+            "started_at",
+            "completed_at",
+        ]
+        read_only_fields = fields

@@ -22,6 +22,7 @@ from apps.core.responses import envelope, error_envelope
 
 from .models import (
     CBTExam,
+    CBTImportJob,
     CBTMedia,
     ExamAttempt,
     ExamCandidate,
@@ -38,6 +39,7 @@ from .serializers import (
     AttemptAnswerSubmissionSerializer,
     AttemptFlagSubmissionSerializer,
     CBTExamSerializer,
+    CBTImportJobSerializer,
     CBTMediaSerializer,
     ExamAttemptEventSerializer,
     ExamAttemptSerializer,
@@ -1118,3 +1120,96 @@ class StudentAnswerGradeView(APIView):
         except AttemptError as exc:
             return error_envelope(str(exc), status=400)
         return envelope(StudentAnswerSerializer(answer).data)
+
+
+class CBTImportJobListCreateView(APIView):
+    """Create durable source-import jobs and list the caller's tenant jobs.
+
+    Uploads are validated and stored privately. No Celery task is dispatched
+    until the dedicated production imports worker has been deployed/verified.
+    """
+
+    def get_permissions(self):
+        code = "cbt_questions.create" if self.request.method == "POST" else "cbt_questions.view"
+        return [IsAuthenticated(), require_permission(code)()]
+
+    def get(self, request):
+        jobs = (
+            CBTImportJob.objects.select_related("school", "subject", "class_level")
+            .order_by("-created_at")[:100]
+        )
+        data = CBTImportJobSerializer(jobs, many=True).data
+        for item in data:
+            item["processing_status"] = "not_configured"
+            item["processing_dispatched"] = False
+        return envelope(data)
+
+    def post(self, request):
+        from .services.source_upload_service import (
+            ImportIdempotencyConflict,
+            InvalidSourceUpload,
+            create_source_import_job,
+            validate_source_upload,
+        )
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return error_envelope("no file provided", status=400)
+
+        subject_id = request.data.get("subject")
+        class_level_id = request.data.get("class_level")
+        if not subject_id or not class_level_id:
+            return error_envelope("subject and class_level are required", status=400)
+
+        subject = generics.get_object_or_404(Subject.objects, public_id=subject_id)
+        class_level = generics.get_object_or_404(ClassLevel.objects, public_id=class_level_id)
+        school = class_level.campus.school
+        if (
+            subject.organization_id != request.user.organization_id
+            or class_level.organization_id != request.user.organization_id
+            or subject.school_id != school.pk
+        ):
+            return error_envelope("subject and class level must belong to the same school", status=400)
+
+        try:
+            source = validate_source_upload(upload)
+            job, created = create_source_import_job(
+                organization=request.user.organization,
+                actor=request.user,
+                school=school,
+                subject=subject,
+                class_level=class_level,
+                source=source,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+            )
+        except InvalidSourceUpload as exc:
+            return error_envelope(str(exc), status=400)
+        except ImportIdempotencyConflict as exc:
+            return error_envelope(str(exc), status=409)
+
+        data = CBTImportJobSerializer(job).data
+        data["processing_status"] = "not_configured"
+        data["processing_dispatched"] = False
+        return envelope(
+            data,
+            message=(
+                "source stored; processing is not configured until the imports worker is deployed"
+                if created else "existing import job returned for this idempotency key"
+            ),
+            status=201 if created else 200,
+        )
+
+
+class CBTImportJobDetailView(APIView):
+    def get_permissions(self):
+        return [IsAuthenticated(), require_permission("cbt_questions.view")()]
+
+    def get(self, request, public_id):
+        job = generics.get_object_or_404(
+            CBTImportJob.objects.select_related("school", "subject", "class_level"),
+            public_id=public_id,
+        )
+        data = CBTImportJobSerializer(job).data
+        data["processing_status"] = "not_configured"
+        data["processing_dispatched"] = False
+        return envelope(data)

@@ -150,3 +150,11 @@ def _presigned_s3_url(key: str) -> str:
         Params={"Bucket": settings.STORAGE_BUCKET_NAME, "Key": key},
         ExpiresIn=3600,
     )
+
+
+def delete_document(key: str) -> None:
+    """Delete a private document by its opaque storage key."""
+    if settings.STORAGE_BACKEND == "s3":
+        _s3_client().delete_object(Bucket=settings.STORAGE_BUCKET_NAME, Key=key)
+        return
+    default_storage.delete(key)
