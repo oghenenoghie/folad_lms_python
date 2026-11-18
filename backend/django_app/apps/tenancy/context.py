@@ -56,6 +56,21 @@ def activate_organization(org_id: int | None) -> None:
         )
 
 
+def deactivate_platform_mode() -> None:
+    """Clear the connection-scoped admin bypass after its request.
+
+    Database connections are reused across requests. Leaving this GUC true
+    after an Admin request could let a later anonymous or tenant-scoped
+    request read across organizations through PostgreSQL RLS.
+    """
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT set_config('app.platform_mode', 'false', false)")
+
+
 def activate_platform_mode() -> None:
     """Set the `app.platform_mode` session GUC that every tenant_isolation
     RLS policy ORs against (see apps.tenancy.db.add_platform_mode_bypass)
