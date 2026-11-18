@@ -150,7 +150,8 @@ Measure p50/p95/p99 latency, error rate, throughput, DB CPU/IO/locks/connections
 2. Django checks and migration consistency.
 3. Unit tests for scoring, transitions and serializers.
 4. API tests for auth, RBAC, tenant scope and candidate ownership.
-5. PostgreSQL integration suite including RLS.
+5. PostgreSQL integration suite including RLS; `.github/workflows/backend-ci.yml` provisions PostgreSQL 16 and Redis 7 for backend pull requests and pushes to `main`.
+6. CI installs the committed `backend/uv.lock`, runs Django system checks, checks migration drift, then executes the complete backend pytest suite. PostgreSQL is used so RLS policies and PostgreSQL-only triggers are exercised; SQLite-only success is not an acceptable substitute.
 6. Concurrency/idempotency tests.
 7. Frontend typecheck/lint/unit/accessibility tests for UI changes.
 8. Dependency and secret scanning.
