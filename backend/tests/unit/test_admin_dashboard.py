@@ -346,4 +346,5 @@ def test_achievement_admin_changelist_and_add(
 
     from apps.students.models import Achievement
 
+    activate_organization(organization.id)
     assert Achievement.all_tenants.filter(title="Regional spelling bee winner").exists()
