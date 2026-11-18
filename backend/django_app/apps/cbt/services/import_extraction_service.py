@@ -76,11 +76,18 @@ def _read_rows(*, content: bytes, source_format: str) -> list[dict]:
 
 
 def _json_value(value):
+    """Convert spreadsheet scalars to stable JSON-safe text values.
+
+    The question service expects textual stems/options/codes; Excel often
+    returns numeric cells as int/float, which must not reach .strip() calls.
+    """
+    if value is None:
+        return None
     if isinstance(value, Decimal):
         return str(value)
     if hasattr(value, "isoformat"):
         return value.isoformat()
-    return value
+    return str(value)
 
 
 def extract_import_job(*, job_id: int, organization, actor=None) -> dict:
