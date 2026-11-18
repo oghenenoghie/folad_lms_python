@@ -13,6 +13,7 @@ from .views import (
     CBTExamListCreateView,
     CBTExamPublishView,
     CBTImportJobDetailView,
+    CBTImportJobPreviewView,
     CBTImportJobListCreateView,
     CBTMediaDetailView,
     CBTMediaListView,
