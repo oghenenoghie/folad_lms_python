@@ -3,7 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import migrations, models
 
-from apps.tenancy.db import enable_rls
+from apps.tenancy.db import add_platform_mode_bypass, enable_rls
 
 
 class Migration(migrations.Migration):
@@ -230,6 +230,9 @@ class Migration(migrations.Migration):
             },
         ),
         enable_rls("cbt_import_job"),
+        add_platform_mode_bypass("cbt_import_job"),
         enable_rls("cbt_import_item"),
+        add_platform_mode_bypass("cbt_import_item"),
         enable_rls("cbt_import_issue"),
+        add_platform_mode_bypass("cbt_import_issue"),
     ]
