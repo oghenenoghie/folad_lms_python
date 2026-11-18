@@ -66,62 +66,62 @@ def _transition(*, attempt: ExamAttempt, new_status: str) -> None:
 
 
 def start_attempt(*, candidate, ip_address: str = "", user_agent: str = "") -> ExamAttempt:
-    exam = candidate.exam
-    if exam.status != "published":
-        raise AttemptError(f"exam is not open for attempts (status: {exam.status!r})")
-    if not candidate.is_eligible:
-        raise AttemptError("candidate is not eligible for this exam")
-    now = timezone.now()
-    if now < exam.start_at:
-        raise AttemptError("exam has not opened yet")
-    if now > exam.end_at:
-        raise AttemptError("exam window has closed")
+    # Lock the candidacy before checking/creating its OneToOne attempt. Two
+    # simultaneous start requests now serialize on the same stable parent row.
+    with transaction.atomic():
+        candidate = candidate.__class__.objects.select_for_update().select_related("exam").get(pk=candidate.pk)
+        exam = candidate.exam
+        if exam.status != "published":
+            raise AttemptError(f"exam is not open for attempts (status: {exam.status!r})")
+        if not candidate.is_eligible:
+            raise AttemptError("candidate is not eligible for this exam")
+        now = timezone.now()
+        if now < exam.start_at:
+            raise AttemptError("exam has not opened yet")
+        if now > exam.end_at:
+            raise AttemptError("exam window has closed")
 
-    attempt, created = ExamAttempt.objects.get_or_create(
-        candidate=candidate, defaults={"organization": exam.organization, "exam": exam}
-    )
-    if not created:
-        if attempt.status == "not_started":
-            pass  # fall through and start it below (e.g. a prior get_or_create race)
-        elif attempt.status == "in_progress":
-            return attempt  # resume — question_order/expires_at already fixed
-        else:
-            raise AttemptError(f"this attempt is already {attempt.status} and cannot be restarted")
+        attempt, created = ExamAttempt.objects.get_or_create(
+            candidate=candidate, defaults={"organization": exam.organization, "exam": exam}
+        )
+        if not created:
+            if attempt.status == "not_started":
+                pass
+            elif attempt.status == "in_progress":
+                return attempt
+            else:
+                raise AttemptError(f"this attempt is already {attempt.status} and cannot be restarted")
 
-    exam_questions = list(exam.exam_questions.order_by("order"))
-    order = [str(eq.public_id) for eq in exam_questions]
-    if exam.randomize_questions:
-        random.shuffle(order)
+        exam_questions = list(exam.exam_questions.order_by("order"))
+        order = [str(eq.public_id) for eq in exam_questions]
+        if exam.randomize_questions:
+            random.shuffle(order)
 
-    option_orders: dict[str, list[str]] = {}
-    if exam.randomize_options:
-        for eq in exam_questions:
-            snapshot = eq.snapshot
-            if not snapshot or snapshot["question_type"] in _ANSWER_KEY_IN_OPTIONS_TYPES:
-                continue  # nothing on-screen to shuffle — see that set's docstring
-            labels = [o["label"] for o in snapshot["options"]]
-            if len(labels) > 1:
-                random.shuffle(labels)
-                option_orders[str(eq.public_id)] = labels
+        option_orders: dict[str, list[str]] = {}
+        if exam.randomize_options:
+            for eq in exam_questions:
+                snapshot = eq.snapshot
+                if not snapshot or snapshot["question_type"] in _ANSWER_KEY_IN_OPTIONS_TYPES:
+                    continue
+                labels = [o["label"] for o in snapshot["options"]]
+                if len(labels) > 1:
+                    random.shuffle(labels)
+                    option_orders[str(eq.public_id)] = labels
 
-    _transition(attempt=attempt, new_status="in_progress")
-    attempt.started_at = now
-    attempt.expires_at = now + timezone.timedelta(
-        minutes=exam.duration_minutes + candidate.extra_time_minutes
-    )
-    attempt.question_order = order
-    attempt.option_orders = option_orders
-    attempt.ip_address = ip_address or None
-    attempt.user_agent = user_agent
-    attempt.save(
-        update_fields=[
+        _transition(attempt=attempt, new_status="in_progress")
+        attempt.started_at = now
+        attempt.expires_at = now + timezone.timedelta(
+            minutes=exam.duration_minutes + candidate.extra_time_minutes
+        )
+        attempt.question_order = order
+        attempt.option_orders = option_orders
+        attempt.ip_address = ip_address or None
+        attempt.user_agent = user_agent
+        attempt.save(update_fields=[
             "status", "started_at", "expires_at", "question_order", "option_orders",
             "ip_address", "user_agent",
-        ]
-    )
-    return attempt
-
-
+        ])
+        return attempt
 def heartbeat(*, attempt: ExamAttempt) -> ExamAttempt:
     """Use the server clock and a row lock to expire an attempt once its
     fixed deadline has been reached. Re-reading under the lock prevents a
@@ -163,51 +163,55 @@ def _require_open(attempt: ExamAttempt) -> None:
 
 
 def save_answer(*, attempt: ExamAttempt, exam_question, response: dict, time_spent_seconds: int = 0) -> StudentAnswer:
-    _require_open(attempt)
-    if exam_question.exam_id != attempt.exam_id:
-        raise AttemptError("that question does not belong to this attempt's exam")
-    answer, _ = StudentAnswer.objects.update_or_create(
-        attempt=attempt,
-        exam_question=exam_question,
-        defaults={
-            "organization": attempt.organization,
-            "response": response,
-            "time_spent_seconds": time_spent_seconds,
-        },
-    )
-    return answer
-
-
+    # Serialize answer writes with submit/expiry and with other writes to the
+    # same attempt. The unique (attempt, exam_question) constraint remains the
+    # final database-level defence against duplicate rows.
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        _require_open(locked)
+        if exam_question.exam_id != locked.exam_id:
+            raise AttemptError("that question does not belong to this attempt's exam")
+        answer, _ = StudentAnswer.objects.update_or_create(
+            attempt=locked,
+            exam_question=exam_question,
+            defaults={
+                "organization": locked.organization,
+                "response": response,
+                "time_spent_seconds": time_spent_seconds,
+            },
+        )
+        return answer
 def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAnswer:
-    _require_open(attempt)
-    answer, _ = StudentAnswer.objects.get_or_create(
-        attempt=attempt, exam_question=exam_question, defaults={"organization": attempt.organization}
-    )
-    answer.flagged = flagged
-    answer.save(update_fields=["flagged"])
-    return answer
-
-
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        _require_open(locked)
+        if exam_question.exam_id != locked.exam_id:
+            raise AttemptError("that question does not belong to this attempt's exam")
+        answer, _ = StudentAnswer.objects.get_or_create(
+            attempt=locked, exam_question=exam_question,
+            defaults={"organization": locked.organization},
+        )
+        if answer.flagged != flagged:
+            answer.flagged = flagged
+            answer.save(update_fields=["flagged"])
+        return answer
 def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
-    """Records one client-reported proctoring signal (visibility change,
-    fullscreen exit, copy/paste, connectivity) and auto-flags the attempt
-    for human review once its count of SUSPICIOUS_EVENT_TYPES reaches
-    AUTO_FLAG_THRESHOLD. Never raises on a benign/informational event type
-    outside SUSPICIOUS_EVENT_TYPES — those are still recorded, just don't
-    count toward flagging.
+    """Append a client-reported signal while holding the attempt lock so
+    event insertion and the threshold-count/auto-flag decision are atomic
+    relative to other event requests and terminal transitions.
     """
-    _require_open(attempt)
-    event = ExamAttemptEvent.objects.create(
-        organization=attempt.organization, attempt=attempt, event_type=event_type, metadata=metadata or {}
-    )
-    if event_type in SUSPICIOUS_EVENT_TYPES and not attempt.flagged_for_review:
-        suspicious_count = attempt.events.filter(event_type__in=SUSPICIOUS_EVENT_TYPES).count()
-        if suspicious_count >= AUTO_FLAG_THRESHOLD:
-            attempt.flagged_for_review = True
-            attempt.save(update_fields=["flagged_for_review"])
-    return event
-
-
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        _require_open(locked)
+        event = ExamAttemptEvent.objects.create(
+            organization=locked.organization, attempt=locked, event_type=event_type, metadata=metadata or {}
+        )
+        if event_type in SUSPICIOUS_EVENT_TYPES and not locked.flagged_for_review:
+            suspicious_count = locked.events.filter(event_type__in=SUSPICIOUS_EVENT_TYPES).count()
+            if suspicious_count >= AUTO_FLAG_THRESHOLD:
+                locked.flagged_for_review = True
+                locked.save(update_fields=["flagged_for_review"])
+        return event
 def _grade_auto_gradable_answers(*, attempt: ExamAttempt) -> None:
     for answer in attempt.answers.select_related("exam_question").filter(graded_at__isnull=True):
         try:
@@ -346,26 +350,32 @@ def is_fully_graded(*, attempt: ExamAttempt) -> bool:
 
 
 def grade_subjective_answer(*, student_answer: StudentAnswer, marks_awarded: Decimal, actor) -> StudentAnswer:
-    exam_question = student_answer.exam_question
-    if student_answer.attempt.status != "submitted":
-        raise AttemptError("cannot grade an answer before the attempt is submitted")
-    question_type = exam_question.snapshot.get("question_type") if exam_question.snapshot else None
-    if question_type in AUTO_GRADABLE_QUESTION_TYPES:
-        raise AttemptError(f"{question_type!r} is auto-graded, not manually gradable")
-    if marks_awarded > exam_question.marks:
-        raise AttemptError(f"marks_awarded cannot exceed this question's {exam_question.marks} marks")
+    # Lock attempt first (the same lock order used by answer writes and
+    # submission), then the answer. This prevents duplicate graders from
+    # racing score recomputation/finalization.
+    with transaction.atomic():
+        attempt = ExamAttempt.objects.select_for_update().get(pk=student_answer.attempt_id)
+        answer = StudentAnswer.objects.select_for_update().select_related("exam_question").get(pk=student_answer.pk)
+        if attempt.status != "submitted":
+            raise AttemptError("cannot grade an answer before the attempt is submitted")
+        if answer.graded_at is not None:
+            raise AttemptError("this answer has already been graded")
+        exam_question = answer.exam_question
+        question_type = exam_question.snapshot.get("question_type") if exam_question.snapshot else None
+        if question_type in AUTO_GRADABLE_QUESTION_TYPES:
+            raise AttemptError(f"{question_type!r} is auto-graded, not manually gradable")
+        if marks_awarded < 0 or marks_awarded > exam_question.marks:
+            raise AttemptError(f"marks_awarded must be between zero and this question's {exam_question.marks} marks")
 
-    student_answer.marks_awarded = marks_awarded
-    student_answer.graded_at = timezone.now()
-    student_answer.save(update_fields=["marks_awarded", "graded_at"])
+        answer.marks_awarded = marks_awarded
+        answer.graded_at = timezone.now()
+        answer.save(update_fields=["marks_awarded", "graded_at"])
+        recompute_score(attempt=attempt)
+        should_finalize = is_fully_graded(attempt=attempt)
 
-    attempt = student_answer.attempt
-    recompute_score(attempt=attempt)
-    if is_fully_graded(attempt=attempt):
+    if should_finalize:
         finalize_attempt(attempt=attempt, actor=actor)
-    return student_answer
-
-
+    return answer
 def _resolve_grade(*, school, percentage) -> str:
     from apps.examinations.models import GradeBand
 
