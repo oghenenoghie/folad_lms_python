@@ -163,7 +163,7 @@ def test_analytics_excludes_attempts_still_pending_manual_grading(
     attempt = start_attempt(candidate=candidate)
     eq = published.exam_questions.get()
     save_answer(attempt=attempt, exam_question=eq, response={"text": "an ungraded essay"})
-    submit_attempt(attempt=attempt, actor=None)
+    attempt = submit_attempt(attempt=attempt, actor=None)
     assert attempt.status == "submitted"  # submitted, but not yet fully graded
 
     summary = exam_summary(exam=published)
