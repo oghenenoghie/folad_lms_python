@@ -323,7 +323,18 @@ class ExamAttemptEventSerializer(serializers.ModelSerializer):
 
     attempt = PublicIdRelatedField(read_only=True)
 
+    client_event_id = serializers.UUIDField(required=False, allow_null=True)
+
     class Meta:
         model = ExamAttemptEvent
-        fields = ["public_id", "attempt", "event_type", "metadata", "created_at"]
+        fields = ["public_id", "attempt", "event_type", "client_event_id", "metadata", "created_at"]
         read_only_fields = ["public_id", "attempt", "created_at"]
+
+    def validate_metadata(self, value):
+        import json
+
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be a JSON object")
+        if len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 4096:
+            raise serializers.ValidationError("metadata must not exceed 4096 bytes")
+        return value
