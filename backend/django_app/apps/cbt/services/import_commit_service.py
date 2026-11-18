@@ -79,7 +79,6 @@ def commit_import_job(*, job_id: int, organization, actor) -> dict:
         actor=actor,
     )
 
-    committed = 0
     for item in items:
         if item.committed_question_id:
             # This branch supports safe recovery if a future deployment
@@ -99,7 +98,6 @@ def commit_import_job(*, job_id: int, organization, actor) -> dict:
         )
         item.committed_question = question
         item.save(update_fields=["committed_question", "updated_at"])
-        committed += 1
 
     summary = dict(job.summary or {})
     summary.update({
