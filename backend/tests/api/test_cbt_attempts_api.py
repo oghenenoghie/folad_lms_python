@@ -231,7 +231,7 @@ def test_staff_grade_requires_permission_and_finalizes_result(
     mc_eq = exam.exam_questions.get(question=mc)
     save_answer(attempt=attempt, exam_question=mc_eq, response={"selected_option_label": "B"})
     save_answer(attempt=attempt, exam_question=subjective_eq, response={"text": "an essay answer"})
-    submit_attempt(attempt=attempt, actor=None)
+    attempt = submit_attempt(attempt=attempt, actor=None)
     assert attempt.status == "submitted"
     assert not Result.objects.filter(student=student).exists()
 
