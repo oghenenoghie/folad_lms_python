@@ -8,8 +8,8 @@ from apps.students.models import Student
 
 from .models import (
     CBTExam,
-    CBTMedia,
     CBTImportJob,
+    CBTMedia,
     ExamAttempt,
     ExamAttemptEvent,
     ExamCandidate,
