@@ -151,7 +151,6 @@ def test_import_job_rls_blocks_cross_tenant_raw_reads(
     subject_factory,
     user_factory,
 ):
-    from apps.cbt.models import CBTImportJob
     fs_a = cbt_fixture_set
     school_b = school_factory(organization=other_organization, code="OTHER")
     class_level_b = class_level_factory(campus=campus_factory(school=school_b))
@@ -197,10 +196,9 @@ def test_import_job_rls_blocks_cross_tenant_raw_reads(
     assert count == 1
 
 
-@pytest.mark.skipif(__import__("django.db").db.connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="RLS is Postgres-only")
 @pytest.mark.django_db
 def test_import_job_rls_fails_closed_without_tenant_context(cbt_fixture_set, user_factory):
-    from apps.cbt.models import CBTImportJob
     fs = cbt_fixture_set
     actor = user_factory(organization=fs["subject"].organization)
     activate_organization(fs["subject"].organization_id)
