@@ -379,3 +379,33 @@ def test_my_candidate_list_returns_empty_for_a_non_student_account(api_client, o
     resp = api_client.get("/api/v1/cbt/my/candidates")
     assert resp.status_code == 200
     assert resp.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_student_late_submit_via_api_is_recorded_as_expired(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+    attempt.expires_at = timezone.now() - timedelta(seconds=1)
+    attempt.save(update_fields=["expires_at"])
+
+    response = api_client.post(f"/api/v1/cbt/my/attempts/{attempt.public_id}/submit")
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["data"]["attempt"]["status"] == "expired"
+
+
+@pytest.mark.django_db
+def test_stale_heartbeat_cannot_overwrite_a_completed_submission(ready_exam):
+    from apps.cbt.services.attempt_service import heartbeat, start_attempt, submit_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    stale_instance = attempt
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    checked = heartbeat(attempt=stale_instance)
+
+    assert submitted.status == "submitted"
+    assert checked.status == "submitted"
