@@ -252,5 +252,6 @@ def test_student_admin_photo_upload_and_removal(
         follow=True,
     )
     assert response.redirect_chain, response.context["adminform"].form.errors
+    activate_organization(organization.id)
     student.refresh_from_db()
     assert student.photo_storage_key == ""

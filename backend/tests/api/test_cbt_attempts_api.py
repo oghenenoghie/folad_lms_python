@@ -60,7 +60,7 @@ def ready_exam(
     exam.start_at = timezone.now() - timedelta(minutes=5)
     exam.end_at = timezone.now() + timedelta(hours=1)
     exam.duration_minutes = 30
-    exam.pass_mark = Decimal("3.00")
+    exam.pass_mark = Decimal("60.00")
     exam.save(update_fields=["start_at", "end_at", "duration_minutes", "pass_mark"])
 
     question = _single_choice_question(cbt_question_factory, fs)
@@ -231,7 +231,7 @@ def test_staff_grade_requires_permission_and_finalizes_result(
     mc_eq = exam.exam_questions.get(question=mc)
     save_answer(attempt=attempt, exam_question=mc_eq, response={"selected_option_label": "B"})
     save_answer(attempt=attempt, exam_question=subjective_eq, response={"text": "an essay answer"})
-    submit_attempt(attempt=attempt, actor=None)
+    attempt = submit_attempt(attempt=attempt, actor=None)
     assert attempt.status == "submitted"
     assert not Result.objects.filter(student=student).exists()
 
