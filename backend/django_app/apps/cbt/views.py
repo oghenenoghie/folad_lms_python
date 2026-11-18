@@ -935,10 +935,12 @@ class AttemptEventView(APIView):
                 attempt=attempt,
                 event_type=serializer.validated_data["event_type"],
                 metadata=serializer.validated_data.get("metadata", {}),
+                client_event_id=serializer.validated_data.get("client_event_id"),
             )
         except AttemptError as exc:
             return error_envelope(str(exc), status=400)
-        return envelope(ExamAttemptEventSerializer(event).data, status=201)
+        status_code = 201 if getattr(event, "_was_created", True) else 200
+        return envelope(ExamAttemptEventSerializer(event).data, status=status_code)
 
 
 class AttemptSubmitView(APIView):

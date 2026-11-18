@@ -681,6 +681,9 @@ class ExamAttemptEvent(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     attempt = models.ForeignKey(ExamAttempt, on_delete=models.CASCADE, related_name="events")
     event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    # Stable UUID supplied by the client for retry-safe delivery. Nullable
+    # during the compatibility window for older clients that do not send it.
+    client_event_id = models.UUIDField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
 
     objects = TenantManager()
@@ -688,6 +691,12 @@ class ExamAttemptEvent(BaseModel):
 
     class Meta:
         db_table = "cbt_exam_attempt_event"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["attempt", "client_event_id"],
+                name="uq_cbt_event_attempt_client_id",
+            )
+        ]
         ordering = ["attempt", "created_at"]
 
     def __str__(self) -> str:

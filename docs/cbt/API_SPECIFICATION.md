@@ -66,6 +66,15 @@ Verify exact serializers and method details in source before generating clients.
 
 The source also contains attempt services for expiry, scoring, subjective grading and finalization. Route details must be kept synchronized with source.
 
+### Proctoring event write contract
+
+`POST /cbt/my/attempts/{id}/events` accepts:
+- `event_type`: one of the declared CBT event types.
+- `client_event_id`: optional client-generated UUID. Clients should generate it once per event and reuse it for every retry.
+- `metadata`: JSON object limited to 4 KiB.
+
+A repeated `client_event_id` with the same event type and metadata returns the original event (HTTP 200) and does not increase suspicious-event counts. Reusing the key with a different payload is rejected. Requests without the key remain backward-compatible but are not retry-deduplicated. PostgreSQL enforces append-only event rows with a database trigger; client-reported events remain evidence signals, not proof of misconduct.
+
 ## 3. Authorization
 
 The baseline uses centralized `module.action` permissions grouped around CBT questions, exams and attempts (including viewing/grading/invigilation). Generate the exact permission matrix from the source registry before UI role configuration. Do not add a parallel role table or self-escalation path.
