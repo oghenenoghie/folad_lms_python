@@ -153,6 +153,10 @@ def test_import_jobs_default_manager_is_tenant_scoped(cbt_fixture_set, user_fact
         idempotency_key="tenant-scope",
     )
 
+    # The explicit all_tenants manager can see the row before a database
+    # tenant context is applied. PostgreSQL RLS still constrains even that
+    # manager once a different organization is active; it is not an RLS bypass.
+    assert CBTImportJob.all_tenants.count() == 1
+
     activate_organization(other_organization.id)
     assert CBTImportJob.objects.count() == 0
-    assert CBTImportJob.all_tenants.count() == 1
