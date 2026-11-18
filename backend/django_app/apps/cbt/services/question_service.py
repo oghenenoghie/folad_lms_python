@@ -341,7 +341,8 @@ def _bulk_import_true_false_options(row: dict) -> list[dict]:
     ]
 
 
-def _bulk_import_one_row(*, organization, actor, subject, class_level, row: dict) -> Question:
+def _bulk_import_payload(*, subject, row: dict) -> dict:
+    """Validate a flat import row and return the canonical question payload."""
     question_type = (row.get("question_type") or "single_choice").strip().lower()
     if question_type not in _BULK_IMPORT_QUESTION_TYPES:
         raise QuestionError(
@@ -367,47 +368,58 @@ def _bulk_import_one_row(*, organization, actor, subject, class_level, row: dict
     try:
         marks = Decimal(str(row.get("marks") or "1"))
         negative_marks = Decimal(str(row.get("negative_marks") or "0"))
-    except InvalidOperation as exc:
-        raise QuestionError(f"marks/negative_marks must be numbers: {exc}") from exc
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise QuestionError("marks/negative_marks must be valid numbers") from exc
+    _validate_scoring_values(marks=marks, negative_marks=negative_marks)
 
     options = (
         _bulk_import_true_false_options(row)
         if question_type == "true_false"
         else _bulk_import_choice_options(row, question_type)
     )
-
-    return create_question(
-        organization=organization,
-        actor=actor,
-        subject=subject,
-        class_level=class_level,
-        topic=topic,
-        question_type=question_type,
-        difficulty=difficulty,
-        marks=marks,
-        negative_marks=negative_marks,
-        blocks=[{"block_type": "paragraph", "content": {"html": text}, "order": 1}],
-        options=options,
-    )
+    return {
+        "subject": subject,
+        "topic": topic,
+        "question_type": question_type,
+        "difficulty": difficulty,
+        "marks": marks,
+        "negative_marks": negative_marks,
+        "blocks": [{"block_type": "paragraph", "content": {"html": text}, "order": 1}],
+        "options": options,
+    }
 
 
-def bulk_import_questions(*, organization, actor, subject, class_level, rows: list[dict]) -> dict:
-    """Creates one Question per row of a parsed CSV (columns:
-    question_type, topic, difficulty, marks, negative_marks, text,
-    option_a..option_f, correct — see _bulk_import_one_row). Never aborts
-    the whole batch on one bad row: collects a per-row error and keeps
-    going, so a single typo in a 200-row sheet doesn't block the other
-    199. Returns {"created": [Question, ...], "errors": [{"row": int, "error": str}, ...]}
-    (row numbers are 1-based and count the header as row 0's data, i.e.
-    the first data row is row 1).
+def _bulk_import_one_row(*, organization, actor, subject, class_level, row: dict) -> Question:
+    payload = _bulk_import_payload(subject=subject, row=row)
+    payload["class_level"] = class_level
+    return create_question(organization=organization, actor=actor, **payload)
+
+
+def bulk_import_questions(*, organization, actor, subject, class_level, rows: list[dict], dry_run: bool = False) -> dict:
+    """Validate or create questions from normalized CSV/XLSX rows.
+
+    Dry-run validates every row and returns a bounded preview without writing
+    question records. Row errors never prevent valid rows from being reported.
     """
     created = []
     errors = []
+    preview = []
     for row_number, row in enumerate(rows, start=1):
         try:
-            created.append(
-                _bulk_import_one_row(organization=organization, actor=actor, subject=subject, class_level=class_level, row=row)
-            )
+            payload = _bulk_import_payload(subject=subject, row=row)
+            if dry_run:
+                preview.append({
+                    "row": row_number,
+                    "question_type": payload["question_type"],
+                    "text": payload["blocks"][0]["content"]["html"],
+                    "topic": payload["topic"].name if payload["topic"] else None,
+                    "difficulty": payload["difficulty"],
+                    "marks": str(payload["marks"]),
+                    "option_count": len(payload["options"]),
+                })
+            else:
+                payload["class_level"] = class_level
+                created.append(create_question(organization=organization, actor=actor, **payload))
         except QuestionError as exc:
             errors.append({"row": row_number, "error": str(exc)})
-    return {"created": created, "errors": errors}
+    return {"created": created, "errors": errors, "preview": preview, "dry_run": dry_run}
