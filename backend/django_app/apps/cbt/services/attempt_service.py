@@ -401,28 +401,31 @@ def _resolve_grade(*, school, percentage) -> str:
 
 @transaction.atomic
 def finalize_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
-    """The point at which a CBT attempt's score becomes an
-    apps.examinations Result, exactly the same way any other
-    assessment's score does — through result_service, never a parallel
-    result path. Requires every answered question to already have a mark
-    (see is_fully_graded); callers only ever reach this once that's true.
+    """Idempotently project a terminal CBT attempt into the shared Result
+    pipeline. Lock order is attempt -> class-subject -> assessment -> result;
+    the assessment lock serializes creation/update even when no Result row
+    exists yet, while the database uniqueness constraint remains the final
+    duplicate-result guard.
     """
     from apps.academics.models import ClassSubject, Enrollment
     from apps.examinations.models import Assessment, Result
     from apps.examinations.services import result_service
 
+    # Always work from the persisted row. Concurrent finalizers for this
+    # attempt serialize here, and retries never trust a stale caller object.
+    attempt = (
+        ExamAttempt.objects.select_for_update()
+        .select_related("exam", "candidate__student")
+        .get(pk=attempt.pk)
+    )
+    if attempt.status not in {"submitted", "expired"}:
+        raise AttemptError("only a submitted or expired attempt can be finalized")
     if not is_fully_graded(attempt=attempt):
         raise AttemptError("cannot finalize an attempt with ungraded answers outstanding")
 
     recompute_score(attempt=attempt)
     exam = attempt.exam
     student = attempt.candidate.student
-
-    # exam.pass_mark can still be a plain str in memory on an object that
-    # was just created/mutated in this same process without a DB round
-    # trip (Django doesn't coerce a DecimalField's Python value until it's
-    # (re)loaded from the database) — coerce explicitly rather than
-    # depending on the caller having a freshly-fetched instance.
     attempt.passed = attempt.score >= Decimal(str(exam.pass_mark))
     attempt.grade = _resolve_grade(school=exam.school, percentage=attempt.percentage)
     attempt.save(update_fields=["passed", "grade"])
@@ -434,8 +437,15 @@ def finalize_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
     )
     if enrollment is None:
         raise AttemptError(f"{student} has no active enrollment for {exam.academic_year} — cannot record a result")
+
+    # Lock the stable parent row before get_or_create. This also serializes
+    # concurrent finalization of distinct CBT attempts that map to the same
+    # class subject/term/name assessment.
     try:
-        class_subject = ClassSubject.objects.get(class_arm=enrollment.class_arm, subject=exam.subject)
+        class_subject = (
+            ClassSubject.objects.select_for_update()
+            .get(class_arm=enrollment.class_arm, subject=exam.subject)
+        )
     except ClassSubject.DoesNotExist as exc:
         raise AttemptError(
             f"no teacher is assigned to {exam.subject} for {enrollment.class_arm} — configure that "
@@ -454,8 +464,13 @@ def finalize_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
             "max_score": exam.total_marks,
         },
     )
+    assessment = Assessment.objects.select_for_update().get(pk=assessment.pk)
 
-    existing = Result.objects.filter(assessment=assessment, student=student).first()
+    # The assessment lock makes the absent-row case safe: all CBT finalizers
+    # for this assessment acquire the same lock before checking or inserting.
+    existing = Result.objects.select_for_update().filter(
+        assessment=assessment, student=student
+    ).first()
     if existing is None:
         result_service.enter_result(assessment=assessment, student=student, actor=actor, score=attempt.score)
     elif existing.status == "entered":
