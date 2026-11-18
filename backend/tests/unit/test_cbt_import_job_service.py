@@ -105,6 +105,7 @@ def test_import_job_failure_records_safe_failure_metadata(cbt_fixture_set, user_
     job = _make_job(fs=fs, actor=actor, key="failure")
     activate_organization(organization.id)
 
+    transition_import_job(job_id=job.pk, organization=organization, to_status="queued")
     failed = transition_import_job(
         job_id=job.pk,
         organization=organization,
