@@ -9,6 +9,7 @@ import hashlib
 import io
 import re
 import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -119,7 +120,7 @@ def _validate_xlsx(content: bytes) -> None:
                 raise InvalidSourceUpload("XLSX archive failed its integrity check")
     except InvalidSourceUpload:
         raise
-    except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
+    except (zipfile.BadZipFile, OSError, RuntimeError, EOFError, zlib.error) as exc:
         raise InvalidSourceUpload("could not read XLSX workbook; verify that it is a valid .xlsx file") from exc
 
     try:
