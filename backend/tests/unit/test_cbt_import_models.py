@@ -1,5 +1,5 @@
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 
 from apps.cbt.models import CBTImportItem, CBTImportJob, CBTImportIssue
 from apps.tenancy.context import activate_organization
@@ -140,7 +140,7 @@ def test_import_issue_preserves_job_item_provenance(cbt_fixture_set, user_factor
     assert issue.source_locator["page"] == 3
 
 
-@pytest.mark.skipif(__import__("django.db").db.connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="RLS is Postgres-only")
 @pytest.mark.django_db
 def test_import_job_rls_blocks_cross_tenant_raw_reads(
     cbt_fixture_set,
@@ -152,8 +152,6 @@ def test_import_job_rls_blocks_cross_tenant_raw_reads(
     user_factory,
 ):
     from apps.cbt.models import CBTImportJob
-    from django.db import connection
-
     fs_a = cbt_fixture_set
     school_b = school_factory(organization=other_organization, code="OTHER")
     class_level_b = class_level_factory(campus=campus_factory(school=school_b))
@@ -203,8 +201,6 @@ def test_import_job_rls_blocks_cross_tenant_raw_reads(
 @pytest.mark.django_db
 def test_import_job_rls_fails_closed_without_tenant_context(cbt_fixture_set, user_factory):
     from apps.cbt.models import CBTImportJob
-    from django.db import connection
-
     fs = cbt_fixture_set
     actor = user_factory(organization=fs["subject"].organization)
     activate_organization(fs["subject"].organization_id)
