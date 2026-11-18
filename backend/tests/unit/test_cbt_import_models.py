@@ -138,3 +138,92 @@ def test_import_issue_preserves_job_item_provenance(cbt_fixture_set, user_factor
     assert issue.job_id == job.pk
     assert issue.item_id == item.pk
     assert issue.source_locator["page"] == 3
+
+
+@pytest.mark.skipif(__import__("django.db").db.connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.django_db
+def test_import_job_rls_blocks_cross_tenant_raw_reads(
+    cbt_fixture_set,
+    other_organization,
+    school_factory,
+    campus_factory,
+    class_level_factory,
+    subject_factory,
+    user_factory,
+):
+    from apps.cbt.models import CBTImportJob
+    from django.db import connection
+
+    fs_a = cbt_fixture_set
+    school_b = school_factory(organization=other_organization, code="OTHER")
+    class_level_b = class_level_factory(campus=campus_factory(school=school_b))
+    subject_b = subject_factory(school=school_b)
+    actor_a = user_factory(organization=fs_a["subject"].organization, email="import-a@example.com")
+    actor_b = user_factory(organization=other_organization, email="import-b@example.com")
+
+    def create_job(*, organization, actor, subject, class_level, key):
+        activate_organization(organization.id)
+        return CBTImportJob.all_tenants.create(
+            organization=organization,
+            created_by=actor,
+            source_name="questions.csv",
+            source_format="csv",
+            storage_key=f"cbt-imports/{organization.id}/source.csv",
+            source_sha256=key.ljust(64, "0"),
+            source_size_bytes=128,
+            idempotency_key=key,
+            subject=subject,
+            class_level=class_level,
+        )
+
+    create_job(
+        organization=fs_a["subject"].organization,
+        actor=actor_a,
+        subject=fs_a["subject"],
+        class_level=fs_a["class_level"],
+        key="tenant-a",
+    )
+    create_job(
+        organization=other_organization,
+        actor=actor_b,
+        subject=subject_b,
+        class_level=class_level_b,
+        key="tenant-b",
+    )
+
+    activate_organization(fs_a["subject"].organization_id)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM cbt_import_job")
+        (count,) = cursor.fetchone()
+
+    assert count == 1
+
+
+@pytest.mark.skipif(__import__("django.db").db.connection.vendor != "postgresql", reason="RLS is Postgres-only")
+@pytest.mark.django_db
+def test_import_job_rls_fails_closed_without_tenant_context(cbt_fixture_set, user_factory):
+    from apps.cbt.models import CBTImportJob
+    from django.db import connection
+
+    fs = cbt_fixture_set
+    actor = user_factory(organization=fs["subject"].organization)
+    activate_organization(fs["subject"].organization_id)
+    CBTImportJob.all_tenants.create(
+        organization=fs["subject"].organization,
+        created_by=actor,
+        source_name="questions.csv",
+        source_format="csv",
+        storage_key=f"cbt-imports/{fs['subject'].organization_id}/source.csv",
+        source_sha256="9" * 64,
+        source_size_bytes=128,
+        idempotency_key="sentinel-context",
+        subject=fs["subject"],
+        class_level=fs["class_level"],
+    )
+
+    activate_organization(None)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM cbt_import_job")
+        (count,) = cursor.fetchone()
+
+    assert count == 0
