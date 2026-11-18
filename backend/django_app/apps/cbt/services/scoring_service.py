@@ -113,4 +113,23 @@ def grade_response(*, exam_question, response: dict) -> tuple[bool, Decimal]:
             raise ScoringError(f"no grader implemented for auto-gradable type {question_type!r}")
         raise ScoringError(f"{question_type!r} is not auto-gradable — needs manual grading")
     is_correct = grader(snapshot=snapshot, response=response)
-    return is_correct, (exam_question.marks if is_correct else Decimal("0"))
+    if is_correct:
+        return True, exam_question.marks
+
+    # Empty/blank responses are unanswered, not wrong answers. This also
+    # covers StudentAnswer rows created solely to flag a question.
+    has_response = any(
+        value is not None and value != "" and value != [] and value != {}
+        for value in (response or {}).values()
+    )
+    exam = getattr(exam_question, "exam", None)
+    if not has_response or not getattr(exam, "negative_marking", False):
+        return False, Decimal("0")
+
+    try:
+        penalty = Decimal(str(snapshot.get("negative_marks", "0")))
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise ScoringError(f"invalid negative_marks in frozen question snapshot: {exc}") from exc
+    if not penalty.is_finite() or penalty < 0 or penalty > exam_question.marks:
+        raise ScoringError("negative_marks must be finite and between zero and the question's marks")
+    return False, -penalty
