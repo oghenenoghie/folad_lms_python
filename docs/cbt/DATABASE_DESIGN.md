@@ -71,7 +71,7 @@ Generated drafts must be promoted into existing Question/QuestionBlock/QuestionO
 
 1. Every tenant-owned CBT table has organization scope and matching RLS policy.
 2. Cross-table organization consistency is checked; FK existence alone is insufficient.
-3. ExamQuestion snapshot is frozen at publish.
+3. ExamQuestion snapshot is frozen at publish, including each question's configured `negative_marks` penalty.
 4. Answer references an ExamQuestion belonging to that attempt's exam.
 5. One answer per attempt/exam-question; concurrent upserts are deterministic.
 6. Attempt transitions use transaction plus row lock or equivalent compare-and-set.
@@ -87,3 +87,8 @@ Expected query patterns: tenant+exam+status; tenant+candidate allocation; attemp
 When approved: re-inspect maintained branch; plan migration dependencies; add only missing entities; add constraints/indexes using deployment-safe methods; verify RLS and TenantManager coverage; add cross-tenant negative tests and migration forward/backward tests. Do not rewrite existing CBT records or snapshots without a separately reviewed data migration.
 
 No schema changes or migrations are included in this documentation PR.
+
+
+## 7. Scoring snapshot policy
+
+Negative marking is enabled by the exam-level `negative_marking` switch. When enabled, incorrect non-blank auto-gradable answers use the per-question `negative_marks` value frozen in the ExamQuestion snapshot. The penalty is constrained to zero through the question's effective marks. Blank/unanswered responses are not penalized, subjective answers remain manually graded within zero and maximum marks, exact-match objective scoring remains unchanged, and the aggregate score is floored at zero. See `SECURITY_AND_TEST_PLAN.md` for the full policy and test cases.
