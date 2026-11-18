@@ -1,13 +1,12 @@
 """Secure, synchronous persistence boundary for CBT source uploads.
 
-This module validates the actual bytes before private storage and creates only
-an `uploaded` ledger row. It deliberately does not enqueue Celery work:
+This module validates actual bytes before private storage and creates only
+an \`uploaded\` ledger row. It deliberately does not enqueue Celery work:
 production import-worker readiness is a separate deployment gate.
 """
 import csv
 import hashlib
 import io
-import os
 import re
 import zipfile
 from dataclasses import dataclass
@@ -46,7 +45,7 @@ class ValidatedSource:
 
 def _safe_filename(filename: str, extension: str) -> str:
     # Treat both slash styles as path separators; never persist a client path.
-    basename = (filename or "questions").replace("\\\\", "/").split("/")[-1]
+    basename = (filename or "questions").replace("\\", "/").split("/")[-1]
     stem = basename.rsplit(".", 1)[0] if "." in basename else basename
     stem = _SAFE_FILENAME.sub("-", stem).strip(".-_")[:220] or "questions"
     return f"{stem}.{extension}"
@@ -69,7 +68,7 @@ def _validate_csv(content: bytes) -> None:
         decoded = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise InvalidSourceUpload("CSV must use UTF-8 encoding") from exc
-    if "\\x00" in decoded:
+    if "\x00" in decoded:
         raise InvalidSourceUpload("CSV contains binary or NUL characters")
     try:
         reader = csv.reader(io.StringIO(decoded, newline=""))
@@ -84,7 +83,7 @@ def _validate_csv(content: bytes) -> None:
 
 
 def _validate_xlsx(content: bytes) -> None:
-    if not content.startswith(b"PK\\x03\\x04"):
+    if not content.startswith(b"PK\x03\x04"):
         raise InvalidSourceUpload("file content does not match an XLSX workbook")
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -95,7 +94,7 @@ def _validate_xlsx(content: bytes) -> None:
             names = set()
             for member in members:
                 path = PurePosixPath(member.filename)
-                if path.is_absolute() or ".." in path.parts or "\\\\" in member.filename:
+                if path.is_absolute() or ".." in path.parts or "\\" in member.filename:
                     raise InvalidSourceUpload("XLSX archive contains an unsafe path")
                 if member.filename in names:
                     raise InvalidSourceUpload("XLSX archive contains duplicate entries")
@@ -146,7 +145,7 @@ def _validate_xlsx(content: bytes) -> None:
 
 def validate_source_upload(upload) -> ValidatedSource:
     """Read once, validate extension + bytes + spreadsheet structure, hash."""
-    original_name = (getattr(upload, "name", "") or "").replace("\\\\", "/").split("/")[-1]
+    original_name = (getattr(upload, "name", "") or "").replace("\\", "/").split("/")[-1]
     extension = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
     if extension not in {"csv", "xlsx"}:
         raise InvalidSourceUpload("only .csv and .xlsx question sources are supported")
@@ -197,11 +196,6 @@ def create_source_import_job(
             raise ImportIdempotencyConflict("Idempotency-Key was already used for a different upload or target")
         return existing, False
 
-    storage_key = (
-        f"cbt-imports/{organization.public_id}/{key[:48]}/{source.sha256[:16]}-{source.filename}"
-    )
-    # Storage key includes the idempotency token and digest, so concurrent
-    # retries for the same request converge on one deterministic object key.
     stored_key = save_document(
         key_prefix=f"cbt-imports/{organization.public_id}/{key[:48]}",
         filename=f"{source.sha256[:16]}-{source.filename}",
