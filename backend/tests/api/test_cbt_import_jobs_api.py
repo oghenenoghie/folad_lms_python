@@ -36,7 +36,9 @@ def test_csv_upload_creates_private_uploaded_job_without_dispatch(
     api_client, cbt_fixture_set, user_factory, monkeypatch
 ):
     fs = cbt_fixture_set
-    user = user_factory(organization=fs["school"].organization, email="importer@example.com", password="secret-pass!")
+    user = user_factory(
+        organization=fs["school"].organization, email="importer@example.com", password="secret-pass!"
+    )
     _grant(user, "cbt_questions.create")
     _login(api_client, "importer@example.com", "secret-pass!")
 
@@ -71,7 +73,9 @@ def test_repeated_idempotent_upload_returns_same_job_without_second_storage_writ
     api_client, cbt_fixture_set, user_factory, monkeypatch
 ):
     fs = cbt_fixture_set
-    user = user_factory(organization=fs["school"].organization, email="retry@example.com", password="secret-pass!")
+    user = user_factory(
+        organization=fs["school"].organization, email="retry@example.com", password="secret-pass!"
+    )
     _grant(user, "cbt_questions.create")
     _login(api_client, "retry@example.com", "secret-pass!")
 
@@ -106,7 +110,9 @@ def test_idempotency_key_cannot_be_reused_for_different_source(
     api_client, cbt_fixture_set, user_factory, monkeypatch
 ):
     fs = cbt_fixture_set
-    user = user_factory(organization=fs["school"].organization, email="conflict@example.com", password="secret-pass!")
+    user = user_factory(
+        organization=fs["school"].organization, email="conflict@example.com", password="secret-pass!"
+    )
     _grant(user, "cbt_questions.create")
     _login(api_client, "conflict@example.com", "secret-pass!")
 
@@ -135,7 +141,9 @@ def test_invalid_xlsx_bytes_are_rejected_before_storage(
     api_client, cbt_fixture_set, user_factory, monkeypatch
 ):
     fs = cbt_fixture_set
-    user = user_factory(organization=fs["school"].organization, email="invalid@example.com", password="secret-pass!")
+    user = user_factory(
+        organization=fs["school"].organization, email="invalid@example.com", password="secret-pass!"
+    )
     _grant(user, "cbt_questions.create")
     _login(api_client, "invalid@example.com", "secret-pass!")
 
@@ -154,3 +162,38 @@ def test_invalid_xlsx_bytes_are_rejected_before_storage(
     assert response.status_code == 400, response.json()
     assert saved == []
     assert CBTImportJob.all_tenants.count() == 0
+
+
+@pytest.mark.django_db
+def test_valid_xlsx_upload_is_accepted(api_client, cbt_fixture_set, user_factory, monkeypatch):
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    fs = cbt_fixture_set
+    user = user_factory(
+        organization=fs["school"].organization, email="xlsx@example.com", password="secret-pass!"
+    )
+    _grant(user, "cbt_questions.create")
+    _login(api_client, "xlsx@example.com", "secret-pass!")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["text", "correct", "option_a", "option_b"])
+    sheet.append(["Which is even?", "B", "3", "4"])
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    monkeypatch.setattr("apps.core.storage.save_document", lambda **kwargs: "private/xlsx-source")
+    response = api_client.post(
+        "/api/v1/cbt/import-jobs",
+        _upload(fs, content=stream.getvalue(), name="questions.xlsx"),
+        format="multipart",
+        HTTP_IDEMPOTENCY_KEY="cbt-import-0005",
+    )
+
+    assert response.status_code == 201, response.json()
+    job = CBTImportJob.all_tenants.get(public_id=response.json()["data"]["public_id"])
+    assert job.source_format == "xlsx"
+    assert job.status == "uploaded"
