@@ -25,6 +25,7 @@ These are source-inspection observations. Reproduce them on the selected maintai
 | CBT-SCORE-01 | The original scorer ignored the exam switch and per-question penalty | Incorrect result | Resolved in M3-B: apply frozen per-question penalties only when the exam enables negative marking; see policy below |
 | CBT-CONC-01 | Attempt creation, answer upsert, submission and scoring need race/idempotency review | Lost/duplicate work or invalid transitions | Add transaction/row-lock or compare-and-set and concurrent tests |
 | CBT-SEC-02 | Proctoring events are client-reported signals | False positive/tampering | Treat as evidence metadata; require human review, not automatic punishment |
+| CBT-SEC-03 | Proctoring event retries and direct database mutation | Duplicate evidence or evidence tampering | Require stable client event UUIDs for retry deduplication, bound metadata size, enforce PostgreSQL append-only trigger and test mutation rejection |
 | CBT-OPS-01 | Historical test count came from merged PR report, not a new audit run | False confidence | Run current suite/CI on selected branch and record actual results |
 
 Do not silently change negative-marking semantics. Product policy must define wrong-answer penalty, multiple-select partial credit, unanswered behavior, score floor, decimal precision and whether penalty applies per item or section.
