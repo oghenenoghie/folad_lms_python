@@ -1,6 +1,7 @@
 """API tests for safe, tenant-scoped CBT import cancellation."""
 
 import pytest
+from django.db import connection
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
 from apps.cbt.models import CBTImportJob
@@ -110,6 +111,12 @@ def test_import_cancellation_is_tenant_scoped(
     )
 
     assert response.status_code == 404
+
+    # Restore the owning tenant database context before asserting the row state.
+    # all_tenants bypasses the ORM manager filter, but PostgreSQL RLS remains active.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT set_config('app.current_org', %s, true)", [str(fs["school"].organization_id)])
+        cursor.execute("SELECT set_config('app.platform_mode', 'false', true)")
     assert CBTImportJob.all_tenants.filter(pk=job.pk, status="uploaded").exists()
 
 
