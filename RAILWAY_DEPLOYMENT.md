@@ -423,3 +423,69 @@ role is not a literal `SUPERUSER`, but double-check this the first time
 you point production at Neon: create two organizations, two users, and
 confirm cross-tenant reads are actually blocked (§9 above), not just that
 the app boots.
+
+## 19. Dedicated Celery import worker (separate Railway service)
+
+The current Railway configuration deploys **Django web only**. Do not change
+its start command to run Celery alongside Gunicorn: web and worker processes
+must be independently restartable and scalable.
+
+A dedicated worker configuration is provided at the repository root:
+`railway.worker.toml`. To create the worker service:
+
+1. In the existing Railway project, add a **new service from the same GitHub
+   repository**. Name it `cbt-import-worker`.
+2. In that service's Settings, set the Config-as-code file path to
+   `railway.worker.toml`. Keep the Django web service on `railway.toml`.
+3. Set the worker's environment to the same production runtime settings as
+   Django: `DJANGO_SETTINGS_MODULE=config.settings.prod`,
+   `DJANGO_SECRET_KEY`, the **least-privilege direct** `DATABASE_URL`,
+   `REDIS_URL`, and the private object-storage variables required by
+   `backend/.env.example` / `apps.core.storage`. Do not copy
+   `MIGRATE_DATABASE_URL` to the worker. The worker does not run migrations.
+4. Confirm the worker starts with the command in `railway.worker.toml`
+   and remains running. Inspect Deploy Logs for Celery's worker-ready
+   message and confirm it is connected to the intended Redis broker.
+5. Confirm Redis is provisioned, reachable, and has sufficient memory and
+   connection capacity. Use the same Redis service/reference as Django;
+   do not point the worker at a different broker.
+6. Monitor worker restarts, task failures/retries, queue depth, task duration,
+   and Redis availability. Configure alerts before enabling user-facing
+   asynchronous processing.
+
+The worker consumes only the `imports` queue, with concurrency 2 as a
+conservative starting point. Scale concurrency/replicas only after measuring
+database connection limits, object-storage throughput, memory, and import
+duration. Each additional worker process can increase concurrent database
+and storage load.
+
+**Important implementation gate:** this configuration deploys the worker
+process, but it does not by itself implement or enable import task dispatch.
+The current import upload API deliberately returns
+`processing_status=not_configured` and `processing_dispatched=false`.
+The repository's extraction service is callable synchronously, but an
+audited Celery task wrapper, task registration, dispatch-after-commit,
+retry/recovery policy, and task-status reconciliation must be implemented
+and tested before any API endpoint enqueues work. Do not manually enqueue
+arbitrary task names or mark jobs as processing merely because the worker is
+online. Until that task implementation is merged and verified, an idle
+worker is expected and safe.
+
+Before enabling dispatch, acceptance checks must demonstrate:
+
+- a task is registered and routed to the `imports` queue;
+- enqueue happens only after the import-job database transaction commits;
+- tenant ownership is re-established from the persisted job, not trusted
+  from task arguments supplied by a client;
+- duplicate delivery is idempotent and concurrent execution is serialized;
+- worker crashes leave a recoverable job state, with bounded retries and
+  visible terminal errors;
+- the task can read the private source object and writes only the intended
+  tenant's import ledger;
+- cancellation and commit cannot race with extraction to produce partial
+  or duplicated question records;
+- logs and task results contain no source contents, credentials, or
+  presigned download URLs.
+
+A successful Railway deployment proves only that the worker process is
+running. It is not proof that the import workflow is operational.
