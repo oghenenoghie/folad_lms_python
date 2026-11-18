@@ -240,19 +240,21 @@ class QuestionBulkImportView(APIView):
                     if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
                         raise ValueError("file is not a valid XLSX workbook")
                 workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-                sheet = workbook.active
-                values = sheet.iter_rows(values_only=True)
-                headers = [str(value).strip().lower() if value is not None else "" for value in next(values, ())]
-                rows = []
-                for values_row in values:
-                    if len(rows) >= self.MAX_ROWS:
-                        raise ValueError("worksheet exceeds the 5,000 row import limit")
-                    rows.append({
-                        headers[index]: ("" if value is None else str(value).strip())
-                        for index, value in enumerate(values_row)
-                        if index < len(headers) and headers[index]
-                    })
-                workbook.close()
+                try:
+                    sheet = workbook.active
+                    values = sheet.iter_rows(values_only=True)
+                    headers = [str(value).strip().lower() if value is not None else "" for value in next(values, ())]
+                    rows = []
+                    for values_row in values:
+                        if len(rows) >= self.MAX_ROWS:
+                            raise ValueError("worksheet exceeds the 5,000 row import limit")
+                        rows.append({
+                            headers[index]: ("" if value is None else str(value).strip())
+                            for index, value in enumerate(values_row)
+                            if index < len(headers) and headers[index]
+                        })
+                finally:
+                    workbook.close()
             except ValueError:
                 raise
             except Exception as exc:
@@ -286,6 +288,13 @@ class QuestionBulkImportView(APIView):
 
         subject = generics.get_object_or_404(Subject.objects, public_id=request.data.get("subject"))
         class_level = generics.get_object_or_404(ClassLevel.objects, public_id=request.data.get("class_level"))
+        if (
+            subject.organization_id != request.user.organization_id
+            or class_level.organization_id != request.user.organization_id
+            or subject.school_id != class_level.campus.school_id
+        ):
+            return error_envelope("subject and class level must belong to the same school", status=400)
+
         dry_run_raw = request.data.get("dry_run", "false")
         dry_run = dry_run_raw is True or str(dry_run_raw).strip().lower() in {"1", "true", "yes"}
         result = question_service.bulk_import_questions(
