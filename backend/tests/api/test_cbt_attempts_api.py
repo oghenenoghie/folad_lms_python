@@ -476,3 +476,52 @@ def test_answer_endpoint_rejects_negative_time_spent(api_client, ready_exam):
         format="json",
     )
     assert response.status_code == 400
+
+@pytest.mark.django_db
+def test_candidate_cannot_access_attempt_from_another_tenant(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    user_factory(
+        organization=other_organization,
+        email="other-tenant-student@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "other-tenant-student@example.com", "s3cret-pass!")
+
+    detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt.public_id}")
+    submit = api_client.post(f"/api/v1/cbt/my/attempts/{attempt.public_id}/submit")
+    candidates = api_client.get("/api/v1/cbt/my/candidates")
+
+    assert detail.status_code == 404
+    assert submit.status_code == 404
+    assert candidates.status_code == 200
+    assert candidates.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_staff_cannot_list_or_review_attempts_from_another_tenant(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    exam = ready_exam["exam"]
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    other_tenant_staff = user_factory(
+        organization=other_organization,
+        email="other-tenant-staff@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "other-tenant-staff@example.com", "s3cret-pass!")
+    _grant(other_tenant_staff, "cbt_attempts.view")
+
+    listed = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts")
+    detail = api_client.get(
+        f"/api/v1/cbt/exams/{exam.public_id}/attempts/{attempt.public_id}"
+    )
+
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 0
+    assert detail.status_code == 404
