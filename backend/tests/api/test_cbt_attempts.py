@@ -486,3 +486,53 @@ def test_log_attempt_event_requires_an_open_attempt(ready_exam):
 
     with pytest.raises(AttemptError):
         log_attempt_event(attempt=attempt, event_type="tab_hidden")
+
+
+@pytest.mark.django_db
+def test_submit_after_expiry_auto_expires_instead_of_accepting_late_submission(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+
+    attempt.expires_at = timezone.now() - timedelta(seconds=1)
+    attempt.save(update_fields=["expires_at"])
+
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    assert submitted.status == "expired"
+    assert submitted.submitted_at is not None
+    assert submitted.score == Decimal("5.00")
+    assert Result.objects.filter(student=ready_exam["student"]).exists()
+
+
+@pytest.mark.django_db
+def test_submit_exactly_at_expiry_is_expired(ready_exam, monkeypatch):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    deadline = attempt.expires_at
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+
+    monkeypatch.setattr("apps.cbt.services.attempt_service.timezone.now", lambda: deadline)
+
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    assert submitted.status == "expired"
+    assert submitted.submitted_at == deadline
+    assert submitted.score == Decimal("5.00")
+
+
+@pytest.mark.django_db
+def test_submit_just_before_expiry_is_submitted(ready_exam, monkeypatch):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    deadline = attempt.expires_at
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+
+    just_before_deadline = deadline - timedelta(microseconds=1)
+    monkeypatch.setattr("apps.cbt.services.attempt_service.timezone.now", lambda: just_before_deadline)
+
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    assert submitted.status == "submitted"
+    assert submitted.submitted_at == just_before_deadline
+    assert submitted.score == Decimal("5.00")
