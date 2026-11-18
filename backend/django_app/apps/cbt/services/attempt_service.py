@@ -123,25 +123,36 @@ def start_attempt(*, candidate, ip_address: str = "", user_agent: str = "") -> E
 
 
 def heartbeat(*, attempt: ExamAttempt) -> ExamAttempt:
-    """The server clock is the only clock that matters — a client checks in
-    here rather than trusting its own countdown, and gets auto-submitted
-    the moment it's overrun its expiry, whether or not it ever calls
-    submit_attempt itself.
+    """Use the server clock and a row lock to expire an attempt once its
+    fixed deadline has been reached. Re-reading under the lock prevents a
+    stale heartbeat from closing an attempt that another request already
+    submitted.
     """
-    if attempt.status == "in_progress" and timezone.now() >= attempt.expires_at:
-        _auto_close(attempt=attempt, new_status="expired")
+    if attempt.status == "in_progress":
+        attempt = _auto_close(attempt=attempt, new_status="expired")
     return attempt
 
 
 def _auto_close(*, attempt: ExamAttempt, new_status: str) -> ExamAttempt:
-    _grade_auto_gradable_answers(attempt=attempt)
-    _transition(attempt=attempt, new_status=new_status)
-    attempt.submitted_at = timezone.now()
-    attempt.save(update_fields=["status", "submitted_at"])
-    recompute_score(attempt=attempt)
-    if is_fully_graded(attempt=attempt):
-        finalize_attempt(attempt=attempt, actor=None)
-    return attempt
+    # Commit the terminal state and automatic marks before attempting the
+    # separate Result integration. A Result configuration failure must not
+    # undo the candidate's submission/expiry or discard their answers.
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        if locked.status != "in_progress":
+            return locked
+        now = timezone.now()
+        if locked.expires_at is None or now < locked.expires_at:
+            return locked
+        _grade_auto_gradable_answers(attempt=locked)
+        _transition(attempt=locked, new_status=new_status)
+        locked.submitted_at = now
+        locked.save(update_fields=["status", "submitted_at"])
+        recompute_score(attempt=locked)
+
+    if is_fully_graded(attempt=locked):
+        finalize_attempt(attempt=locked, actor=None)
+    return locked
 
 
 def _require_open(attempt: ExamAttempt) -> None:
@@ -212,23 +223,29 @@ def _grade_auto_gradable_answers(*, attempt: ExamAttempt) -> None:
 
 
 def submit_attempt(*, attempt: ExamAttempt, actor) -> ExamAttempt:
-    """Deliberately NOT wrapped in one atomic block together with
-    finalize_attempt: a Result-integration failure (e.g. no ClassSubject
-    configured yet for this student's class/subject) must never roll back
-    — and so silently discard — the submission and scoring that already
-    succeeded. finalize_attempt is its own self-contained atomic unit;
-    its failure only undoes its own partial writes.
+    """Submit against the persisted server deadline, not a possibly stale
+    in-memory attempt or client clock. The row lock serializes manual submit
+    with heartbeat/auto-expiry. Submission/expiry and grading commit before
+    the separate Result integration, so a Result failure cannot discard
+    candidate work.
     """
-    if attempt.status != "in_progress":
-        raise InvalidAttemptTransition(f"cannot submit a {attempt.status!r} attempt")
-    _grade_auto_gradable_answers(attempt=attempt)
-    _transition(attempt=attempt, new_status="submitted")
-    attempt.submitted_at = timezone.now()
-    attempt.save(update_fields=["status", "submitted_at"])
-    recompute_score(attempt=attempt)
-    if is_fully_graded(attempt=attempt):
-        finalize_attempt(attempt=attempt, actor=actor)
-    return attempt
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        if locked.status != "in_progress":
+            raise InvalidAttemptTransition(f"cannot submit a {locked.status!r} attempt")
+        now = timezone.now()
+        if locked.expires_at is None:
+            raise AttemptError("this attempt has no server expiry deadline")
+        terminal_status = "expired" if now >= locked.expires_at else "submitted"
+        _grade_auto_gradable_answers(attempt=locked)
+        _transition(attempt=locked, new_status=terminal_status)
+        locked.submitted_at = now
+        locked.save(update_fields=["status", "submitted_at"])
+        recompute_score(attempt=locked)
+
+    if is_fully_graded(attempt=locked):
+        finalize_attempt(attempt=locked, actor=actor)
+    return locked
 
 
 # These four types keep their entire answer key inside options[0].content
