@@ -609,3 +609,38 @@ def test_event_write_after_submission_is_rejected(ready_exam):
 
     with pytest.raises(AttemptError):
         log_attempt_event(attempt=attempt, event_type="tab_hidden")
+
+
+@pytest.mark.django_db
+def test_repeated_finalization_reuses_the_existing_result(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    first_result = Result.objects.get(student=ready_exam["student"])
+    finalized_again = finalize_attempt(attempt=submitted, actor=None)
+    second_result = Result.objects.get(student=ready_exam["student"])
+
+    assert finalized_again.pk == submitted.pk
+    assert second_result.pk == first_result.pk
+    assert Result.objects.filter(assessment=first_result.assessment, student=ready_exam["student"]).count() == 1
+    assert second_result.score == submitted.score
+
+
+@pytest.mark.django_db
+def test_finalization_refuses_to_overwrite_a_result_past_entered(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+    submitted = submit_attempt(attempt=attempt, actor=None)
+    existing = Result.objects.get(student=ready_exam["student"])
+    existing.status = "submitted"
+    existing.save(update_fields=["status"])
+
+    with pytest.raises(AttemptError, match="past the 'entered' stage"):
+        finalize_attempt(attempt=submitted, actor=None)
+
+    existing.refresh_from_db()
+    assert existing.status == "submitted"
+    assert Result.objects.filter(assessment=existing.assessment, student=ready_exam["student"]).count() == 1
