@@ -9,7 +9,7 @@ authenticated request; the login flow as soon as it resolves a user; this
 module's AdminPlatformModeMiddleware for /admin/). No currently-anonymous
 code path touches an RLS-protected table without one of those running first.
 """
-from .context import activate_platform_mode, set_current_organization_id
+from .context import activate_platform_mode, deactivate_platform_mode, set_current_organization_id
 
 
 class TenancyResetMiddleware:
@@ -41,4 +41,11 @@ class AdminPlatformModeMiddleware:
     def __call__(self, request):
         if request.path.startswith("/admin/") and request.user.is_authenticated and request.user.is_staff:
             activate_platform_mode()
+            try:
+                return self.get_response(request)
+            finally:
+                # RLS GUCs are session-scoped because Django reuses DB
+                # connections. Never let Admin's cross-tenant bypass bleed
+                # into the next request handled by this worker.
+                deactivate_platform_mode()
         return self.get_response(request)
