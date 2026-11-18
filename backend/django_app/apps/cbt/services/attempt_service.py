@@ -200,17 +200,43 @@ def set_flag(*, attempt: ExamAttempt, exam_question, flagged: bool) -> StudentAn
             answer.save(update_fields=["flagged"])
         return answer
 
-def log_attempt_event(*, attempt: ExamAttempt, event_type: str, metadata: dict | None = None) -> ExamAttemptEvent:
-    """Append a client-reported signal while holding the attempt lock so
-    event insertion and the threshold-count/auto-flag decision are atomic
-    relative to other event requests and terminal transitions.
+def log_attempt_event(
+    *,
+    attempt: ExamAttempt,
+    event_type: str,
+    metadata: dict | None = None,
+    client_event_id=None,
+) -> ExamAttemptEvent:
+    """Append a client-reported signal under the attempt lock.
+
+    A stable client_event_id makes network retries idempotent. Reusing the
+    same key with a different event payload is rejected rather than silently
+    rewriting the original evidence. Events without a key remain supported
+    for older clients but cannot be deduplicated across retries.
     """
+    metadata = metadata or {}
     with transaction.atomic():
         locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
         _require_open(locked)
+
+        if client_event_id is not None:
+            existing = ExamAttemptEvent.objects.filter(
+                attempt=locked, client_event_id=client_event_id
+            ).first()
+            if existing is not None:
+                if existing.event_type != event_type or existing.metadata != metadata:
+                    raise AttemptError("client_event_id was already used for a different event payload")
+                existing._was_created = False
+                return existing
+
         event = ExamAttemptEvent.objects.create(
-            organization=locked.organization, attempt=locked, event_type=event_type, metadata=metadata or {}
+            organization=locked.organization,
+            attempt=locked,
+            event_type=event_type,
+            client_event_id=client_event_id,
+            metadata=metadata,
         )
+        event._was_created = True
         if event_type in SUSPICIOUS_EVENT_TYPES and not locked.flagged_for_review:
             suspicious_count = locked.events.filter(event_type__in=SUSPICIOUS_EVENT_TYPES).count()
             if suspicious_count >= AUTO_FLAG_THRESHOLD:
