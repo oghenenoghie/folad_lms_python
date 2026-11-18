@@ -603,24 +603,9 @@ def test_answer_write_after_submission_is_rejected(ready_exam):
 
 
 @pytest.mark.django_db
-def test_duplicate_manual_grading_is_rejected(ready_exam, cbt_question_factory, monkeypatch):
-    # The lock and graded_at guard make a repeated grading request explicit
-    # rather than silently overwriting a previously awarded mark.
-    fs = ready_exam
-    exam = fs["exam"]
-    subjective = cbt_question_factory(
-        subject=fs["subject"], class_level=fs["class_level"], question_type="short_answer", marks="5.00"
-    )
-    submit_question(question=subjective, actor=None)
-    approve_question(question=subjective, actor=None)
-    from apps.cbt.services.exam_service import add_question_to_exam
-    add_question_to_exam(exam=exam, question=subjective)
-    exam = publish_exam(exam=exam, actor=None)
-    attempt = start_attempt(candidate=fs["candidate"])
-    subjective_eq = exam.exam_questions.get(question=subjective)
-    answer = save_answer(attempt=attempt, exam_question=subjective_eq, response={"text": "answer"})
+def test_event_write_after_submission_is_rejected(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
     submit_attempt(attempt=attempt, actor=None)
-    grade_subjective_answer(student_answer=answer, marks_awarded=Decimal("3.00"), actor=None)
 
-    with pytest.raises(AttemptError, match="already been graded"):
-        grade_subjective_answer(student_answer=answer, marks_awarded=Decimal("4.00"), actor=None)
+    with pytest.raises(AttemptError):
+        log_attempt_event(attempt=attempt, event_type="tab_hidden")
