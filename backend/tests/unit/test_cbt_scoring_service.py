@@ -215,3 +215,14 @@ def test_negative_penalty_cannot_exceed_question_marks():
 
     with pytest.raises(ScoringError):
         grade_response(exam_question=eq, response={"selected_option_label": "wrong"})
+
+
+def test_negative_mark_configuration_must_be_between_zero_and_question_marks():
+    from apps.cbt.services.question_service import QuestionError, _validate_scoring_values
+
+    _validate_scoring_values(marks="5.00", negative_marks="0.00")
+    _validate_scoring_values(marks="5.00", negative_marks="5.00")
+    with pytest.raises(QuestionError):
+        _validate_scoring_values(marks="5.00", negative_marks="-0.01")
+    with pytest.raises(QuestionError):
+        _validate_scoring_values(marks="5.00", negative_marks="5.01")
