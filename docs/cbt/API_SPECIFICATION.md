@@ -27,7 +27,7 @@ Verify exact serializers and method details in source before generating clients.
 | `/cbt/topics` | GET, POST | List/create topics |
 | `/cbt/questions` | GET, POST | List/create questions |
 | `/cbt/questions/{id}` | GET, PATCH | Retrieve/update question |
-| `/cbt/questions/bulk-import` | POST | Existing CSV bulk import |
+| `/cbt/questions/bulk-import` | POST | Bounded CSV/XLSX import; `dry_run=true` validates and previews without writes |
 | `/cbt/questions/{id}/submit` | POST | Submit for review |
 | `/cbt/questions/{id}/approve` | POST | Approve |
 | `/cbt/questions/{id}/reject` | POST | Reject |
@@ -130,6 +130,9 @@ Include schema version, package UUID/version, exam public ID, centre/device scop
 Validate signature, device/package state, tenant/exam/candidate scope, sequence continuity, hashes, schema, size limits, replay/idempotency and state transitions. Server receipt time is authoritative. A rejected batch must not advance accepted sequence.
 
 Response includes batch ID/status, accepted-through sequence, rejected event references, conflict summary, server receipt time and retry classification. Report accepted only after commit.
+
+
+Current synchronous import contract: multipart fields are `file`, `subject` and `class_level`; optional `dry_run=true` returns a row-level preview and validation errors without creating questions. Supported files are UTF-8 CSV and XLSX (first worksheet, first row as headers). Required columns are `text` and `correct`; optional columns include `question_type`, `topic`, `difficulty`, `marks`, `negative_marks`, and `option_a` through `option_f`. The endpoint caps uploads at 10 MB and imports at 5,000 data rows; XLSX archive expansion is capped at 50 MB. Formula cells are read as cached values only; formulas are never evaluated. DOCX/PDF extraction and durable asynchronous import jobs remain future work.
 
 ## 5. Proposed document-import contracts (not implemented)
 
