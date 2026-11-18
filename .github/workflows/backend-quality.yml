@@ -1,0 +1,84 @@
+name: Backend quality gates
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Django and CBT backend (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: folad_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d folad_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DJANGO_SECRET_KEY: ci-only-not-a-production-secret
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/folad_test
+      DB_SSL_REQUIRE: "false"
+      REDIS_URL: redis://127.0.0.1:6379/0
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/pyproject.toml
+            backend/uv.lock
+
+      - name: Install locked backend dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Django system checks
+        run: uv run python django_app/manage.py check --settings=config.settings.test
+
+      - name: Check migration drift
+        run: uv run python django_app/manage.py makemigrations --check --dry-run --settings=config.settings.test
+
+      - name: Lint CBT backend and focused tests
+        run: uv run ruff check django_app/apps/cbt tests/api/test_cbt_attempts.py
+
+      - name: Run backend test suite on PostgreSQL
+        run: uv run pytest
