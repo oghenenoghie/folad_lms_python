@@ -20,20 +20,20 @@ concurrency:
 
 jobs:
   django-postgres:
-    name: Django tests (PostgreSQL 16 + Redis 7)
+    name: Django tests (PostgreSQL 16 + Redis 7, RLS-enabled role)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: sms
-          POSTGRES_USER: sms
-          POSTGRES_PASSWORD: sms
+          POSTGRES_DB: test_sms
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U sms -d sms"
+          --health-cmd "pg_isready -U postgres -d test_sms"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -47,11 +47,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      POSTGRES_DB: sms
-      POSTGRES_USER: sms
-      POSTGRES_PASSWORD: sms
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: '5432'
+      DATABASE_URL: postgresql://folad_ci:folad_ci_password@127.0.0.1:5432/test_sms
+      DB_SSL_REQUIRE: 'false'
       REDIS_URL: redis://127.0.0.1:6379/0
       DJANGO_SECRET_KEY: ci-only-not-a-production-secret
       DJANGO_SETTINGS_MODULE: config.settings.test
@@ -73,6 +70,15 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install locked backend dependencies
         run: uv sync --extra dev --frozen
+      - name: Create a non-superuser database role for RLS tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE folad_ci LOGIN PASSWORD 'folad_ci_password' CREATEDB;
+          ALTER DATABASE test_sms OWNER TO folad_ci;
+          GRANT ALL PRIVILEGES ON DATABASE test_sms TO folad_ci;
+          SQL
       - name: Check Django configuration
         run: uv run python django_app/manage.py check
       - name: Check migration drift
