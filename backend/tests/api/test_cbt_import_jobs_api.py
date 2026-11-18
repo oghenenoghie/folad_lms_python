@@ -55,7 +55,7 @@ def test_csv_upload_creates_private_uploaded_job_without_dispatch(
 
     assert response.status_code == 201, response.json()
     data = response.json()["data"]
-    job = CBTImportJob.objects.get(public_id=data["public_id"])
+    job = CBTImportJob.all_tenants.get(public_id=data["public_id"])
     assert job.status == "uploaded"
     assert job.storage_key == "private/cbt-import-source"
     assert job.source_format == "csv"
@@ -98,7 +98,7 @@ def test_repeated_idempotent_upload_returns_same_job_without_second_storage_writ
     assert second.status_code == 200, second.json()
     assert first.json()["data"]["public_id"] == second.json()["data"]["public_id"]
     assert len(saved) == 1
-    assert CBTImportJob.objects.count() == 1
+    assert CBTImportJob.all_tenants.count() == 1
 
 
 @pytest.mark.django_db
@@ -127,7 +127,7 @@ def test_idempotency_key_cannot_be_reused_for_different_source(
 
     assert first.status_code == 201, first.json()
     assert second.status_code == 409, second.json()
-    assert CBTImportJob.objects.count() == 1
+    assert CBTImportJob.all_tenants.count() == 1
 
 
 @pytest.mark.django_db
@@ -153,4 +153,4 @@ def test_invalid_xlsx_bytes_are_rejected_before_storage(
 
     assert response.status_code == 400, response.json()
     assert saved == []
-    assert CBTImportJob.objects.count() == 0
+    assert CBTImportJob.all_tenants.count() == 0
