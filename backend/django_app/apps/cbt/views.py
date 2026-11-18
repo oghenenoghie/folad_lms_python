@@ -24,7 +24,6 @@ from .models import (
     CBTExam,
     CBTMedia,
     ExamAttempt,
-    ExamAttemptEvent,
     ExamCandidate,
     ExamQuestion,
     ExamSection,
