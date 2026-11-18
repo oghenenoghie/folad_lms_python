@@ -62,7 +62,7 @@ def test_commit_creates_draft_questions_and_links_each_ledger_item(
 
     job.refresh_from_db()
     items = list(CBTImportItem.objects.filter(job=job).order_by("sequence"))
-    questions = list(Question.objects.filter(organization=organization).order_by("created_at"))
+    questions = list(Question.objects.filter(organization=organization).order_by("pk"))
     assert job.status == "completed"
     assert summary["items_committed"] == 2
     assert summary["preview_only"] is False
