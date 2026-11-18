@@ -1,4 +1,7 @@
 import pytest
+from django.db import connection
+
+from apps.tenancy.context import activate_organization
 
 from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import Table
@@ -73,9 +76,17 @@ def test_report_card_verify_endpoint_returns_public_payload_without_auth(
     report_card = generate_report_card(student=fs["student"], term=fs["term"], actor=None)
     publish_report_card(report_card=report_card, actor=None)
 
+    # Simulate an anonymous request with no tenant context. Public
+    # verification must narrowly enable RLS visibility for the token query
+    # and must not leave the platform bypass active afterward.
+    activate_organization(None)
     resp = api_client.get(f"/api/v1/report-cards/verify/{report_card.verification_code}")
 
     assert resp.status_code == 200
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_setting('app.platform_mode', true)")
+            assert cursor.fetchone()[0] == "false"
     data = resp.json()["data"]
     assert data["report_card_number"] == report_card.report_card_number
     assert data["student_name"] == f"{fs['student'].first_name} {fs['student'].last_name}"
