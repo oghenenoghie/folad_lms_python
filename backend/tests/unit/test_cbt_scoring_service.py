@@ -2,6 +2,8 @@
 beyond building a plain snapshot dict, since grade_response only ever
 reads a frozen ExamQuestion.snapshot, never the live Question.
 """
+from decimal import Decimal
+
 import pytest
 
 from apps.cbt.services.scoring_service import ScoringError, grade_response
