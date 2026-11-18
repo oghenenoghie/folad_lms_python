@@ -112,13 +112,27 @@ def grade_response(*, exam_question, response: dict) -> tuple[bool, Decimal]:
         if question_type in AUTO_GRADABLE_QUESTION_TYPES:
             raise ScoringError(f"no grader implemented for auto-gradable type {question_type!r}")
         raise ScoringError(f"{question_type!r} is not auto-gradable — needs manual grading")
+    exam = getattr(exam_question, "exam", None)
+    negative_marking = bool(getattr(exam, "negative_marking", False))
+    penalty = Decimal("0")
+    if negative_marking:
+        try:
+            penalty = Decimal(str(snapshot.get("negative_marks", "0")))
+        except (TypeError, ValueError, ArithmeticError) as exc:
+            raise ScoringError(f"invalid negative_marks in frozen question snapshot: {exc}") from exc
+        if not penalty.is_finite() or penalty < 0 or penalty > exam_question.marks:
+            raise ScoringError("negative_marks must be finite and between zero and the question's marks")
+
     # Empty/blank responses are unanswered, not wrong answers. This also
     # covers StudentAnswer rows created solely to flag a question. Check
     # before calling the type-specific grader: numeric/matching graders
     # correctly reject malformed attempted answers, but an empty response
     # must remain an ordinary unanswered item.
     has_response = any(
-        value is not None and value != "" and value != [] and value != {}
+        value is not None
+        and not (isinstance(value, str) and not value.strip())
+        and value != []
+        and value != {}
         for value in (response or {}).values()
     )
     if not has_response:
@@ -127,15 +141,4 @@ def grade_response(*, exam_question, response: dict) -> tuple[bool, Decimal]:
     is_correct = grader(snapshot=snapshot, response=response)
     if is_correct:
         return True, exam_question.marks
-
-    exam = getattr(exam_question, "exam", None)
-    if not getattr(exam, "negative_marking", False):
-        return False, Decimal("0")
-
-    try:
-        penalty = Decimal(str(snapshot.get("negative_marks", "0")))
-    except (TypeError, ValueError, ArithmeticError) as exc:
-        raise ScoringError(f"invalid negative_marks in frozen question snapshot: {exc}") from exc
-    if not penalty.is_finite() or penalty < 0 or penalty > exam_question.marks:
-        raise ScoringError("negative_marks must be finite and between zero and the question's marks")
-    return False, -penalty
+    return False, -penalty if negative_marking else Decimal("0")
