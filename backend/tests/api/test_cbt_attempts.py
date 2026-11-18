@@ -74,7 +74,7 @@ def ready_exam(cbt_exam_fixture_set, cbt_question_factory, student_factory, staf
     class_subject_factory(class_arm=fs["class_arm"], subject=fs["subject"], teacher=teacher)
 
     candidate = add_candidate(exam=exam, student=student)
-    publish_exam(exam=exam, actor=None)
+    published = publish_exam(exam=exam, actor=None)
     return {**fs, "exam": published, "question": question, "student": student, "candidate": candidate}
 
 
@@ -228,7 +228,7 @@ def test_answer_key_only_types_never_get_an_option_order(
     student = student_factory(school=fs["school"])
     enrollment_factory(student=student, class_arm=fs["class_arm"], academic_year=fs["academic_year"])
     candidate = add_candidate(exam=exam, student=student)
-    published = publish_exam(exam=exam, actor=None)
+    publish_exam(exam=exam, actor=None)
 
     attempt = start_attempt(candidate=candidate)
     assert attempt.option_orders == {}
