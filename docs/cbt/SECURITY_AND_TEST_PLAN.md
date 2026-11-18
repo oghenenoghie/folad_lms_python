@@ -44,6 +44,18 @@ Do not silently change negative-marking semantics. Product policy must define wr
 - Penalties are applied per question using the published snapshot, so later edits to the question bank cannot change an already-published exam's scoring.
 - Decimal arithmetic is retained; no floating-point scoring is introduced.
 
+## 2.2 M3-F candidate request validation
+
+Candidate answer and flag endpoints validate request payloads before resolving question resources or invoking domain services:
+
+- `exam_question` must be a valid public UUID and must belong to the candidate's exam.
+- `response` must be a JSON object; arrays, strings, numbers and null are rejected.
+- `time_spent_seconds` must be an integer greater than or equal to zero. Malformed values are returned as client validation errors rather than leaking conversion exceptions as server errors.
+- `flagged` uses serializer boolean parsing, so an explicit false value is not accidentally converted to true by Python truthiness.
+- API regression coverage includes malformed/negative time, non-object responses and false flag values.
+
+These checks validate the transport contract; the attempt service remains responsible for domain invariants, deadline enforcement and locking.
+
 ## 3. Authentication and authorization tests
 
 - Protected routes reject unauthenticated requests.
@@ -155,15 +167,3 @@ Runbooks cover suspected exam compromise, device theft, signing-key compromise, 
 
 High-stakes release requires resolved timing/scoring/concurrency findings; PostgreSQL tenant and candidate ownership tests; verified answer-key secrecy; durable/idempotent submission and sync; offline tamper/replay/recovery tests for offline release; demonstrated capacity; no unresolved critical/high security findings; and successful backup restore/operator drills.
 
-
-## 2.2 M3-F candidate request validation
-
-Candidate answer and flag endpoints validate request payloads before resolving question resources or invoking domain services:
-
-- `exam_question` must be a valid public UUID and must belong to the candidate's exam.
-- `response` must be a JSON object; arrays, strings, numbers and null are rejected.
-- `time_spent_seconds` must be an integer greater than or equal to zero. Malformed values are returned as client validation errors rather than leaking conversion exceptions as server errors.
-- `flagged` uses serializer boolean parsing, so an explicit false value is not accidentally converted to true by Python truthiness.
-- API regression coverage includes malformed/negative time, non-object responses and false flag values.
-
-These checks validate the transport contract; the attempt service remains responsible for domain invariants, deadline enforcement and locking.
