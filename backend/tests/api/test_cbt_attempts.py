@@ -560,3 +560,52 @@ def test_exam_negative_marking_uses_frozen_penalty_and_never_drops_score_below_z
     assert answer.marks_awarded == Decimal("-1.50")
     assert submitted.score == Decimal("0")
     assert submitted.percentage == Decimal("0")
+
+
+@pytest.mark.django_db
+def test_repeated_start_resumes_the_same_attempt_without_resetting_timer(ready_exam):
+    candidate = ready_exam["candidate"]
+    first = start_attempt(candidate=candidate, ip_address="192.0.2.10")
+    original_started_at = first.started_at
+    original_expiry = first.expires_at
+    original_order = list(first.question_order)
+
+    resumed = start_attempt(candidate=candidate, ip_address="192.0.2.20")
+
+    assert resumed.pk == first.pk
+    assert resumed.started_at == original_started_at
+    assert resumed.expires_at == original_expiry
+    assert resumed.question_order == original_order
+    assert ExamAttempt.objects.filter(candidate=candidate).count() == 1
+
+
+@pytest.mark.django_db
+def test_repeated_answer_save_is_an_upsert_not_a_duplicate(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+
+    first = save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "A"})
+    second = save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+
+    assert first.pk == second.pk
+    assert second.response == {"selected_option_label": "B"}
+    assert StudentAnswer.objects.filter(attempt=attempt, exam_question=exam_question).count() == 1
+
+
+@pytest.mark.django_db
+def test_answer_write_after_submission_is_rejected(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    submit_attempt(attempt=attempt, actor=None)
+
+    with pytest.raises(AttemptError):
+        save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+
+
+@pytest.mark.django_db
+def test_event_write_after_submission_is_rejected(ready_exam):
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    submit_attempt(attempt=attempt, actor=None)
+
+    with pytest.raises(AttemptError):
+        log_attempt_event(attempt=attempt, event_type="tab_hidden")
