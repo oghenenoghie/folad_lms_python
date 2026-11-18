@@ -229,5 +229,5 @@ def test_import_jobs_are_not_visible_to_another_tenant(
     listing = api_client.get("/api/v1/cbt/import-jobs")
     detail = api_client.get(f"/api/v1/cbt/import-jobs/{public_id}")
     assert listing.status_code == 200
-    assert listing.json()["data"] == []
+    assert listing.json()["data"] == {}
     assert detail.status_code == 404
