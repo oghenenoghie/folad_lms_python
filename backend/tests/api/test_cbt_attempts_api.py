@@ -525,3 +525,32 @@ def test_staff_cannot_list_or_review_attempts_from_another_tenant(
     assert listed.status_code == 200
     assert listed.json()["data"]["pagination"]["total_count"] == 0
     assert detail.status_code == 404
+
+@pytest.mark.django_db
+def test_staff_from_another_tenant_cannot_grade_an_answer(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    other_tenant_grader = user_factory(
+        organization=other_organization,
+        email="cross-tenant-grader@example.com",
+        password="s3cret-pass!",
+    )
+    _grant(other_tenant_grader, "cbt_attempts.grade")
+    _login(api_client, "cross-tenant-grader@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        {"marks_awarded": "1.00"},
+        format="json",
+    )
+
+    assert response.status_code == 404
