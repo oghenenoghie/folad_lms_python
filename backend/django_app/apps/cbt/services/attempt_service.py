@@ -217,7 +217,6 @@ def log_attempt_event(
     metadata = metadata or {}
     with transaction.atomic():
         locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
-        _require_open(locked)
 
         if client_event_id is not None:
             existing = ExamAttemptEvent.objects.filter(
@@ -228,6 +227,10 @@ def log_attempt_event(
                     raise AttemptError("client_event_id was already used for a different event payload")
                 existing._was_created = False
                 return existing
+
+        # Replays may be acknowledged after submission, but new evidence
+        # must never be appended to a terminal attempt.
+        _require_open(locked)
 
         event = ExamAttemptEvent.objects.create(
             organization=locked.organization,
