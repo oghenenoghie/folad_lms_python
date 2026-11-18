@@ -27,13 +27,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: sms
-          POSTGRES_USER: sms
-          POSTGRES_PASSWORD: sms
+          POSTGRES_DB: test_sms
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U sms -d sms"
+          --health-cmd "pg_isready -U postgres -d test_sms"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -47,10 +47,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      POSTGRES_DB: sms
-      POSTGRES_USER: sms
-      POSTGRES_PASSWORD: sms
+      POSTGRES_DB: test_sms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_HOST: 127.0.0.1
+      DATABASE_URL: postgresql://sms_app:sms_app@127.0.0.1:5432/test_sms
+      DB_SSL_REQUIRE: 'false'
       POSTGRES_PORT: '5432'
       REDIS_URL: redis://127.0.0.1:6379/0
       DJANGO_SECRET_KEY: ci-only-not-a-production-secret
@@ -73,6 +75,24 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install locked backend dependencies
         run: uv sync --extra dev --frozen
+      - name: Create non-superuser application role for RLS tests
+        run: |
+          uv run python - <<'PY'
+          import psycopg
+
+          with psycopg.connect(
+              "postgresql://postgres:postgres@127.0.0.1:5432/test_sms",
+              autocommit=True,
+          ) as connection:
+              connection.execute(
+                  "CREATE ROLE sms_app LOGIN PASSWORD 'sms_app' "
+                  "NOSUPERUSER NOBYPASSRLS CREATEDB"
+              )
+              connection.execute("ALTER DATABASE test_sms OWNER TO sms_app")
+              connection.execute("ALTER SCHEMA public OWNER TO sms_app")
+          PY
+      - name: Lint CBT backend and focused tests
+        run: uv run ruff check django_app/apps/cbt tests/api/test_cbt_attempts.py
       - name: Check Django configuration
         run: uv run python django_app/manage.py check
       - name: Check migration drift
