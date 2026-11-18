@@ -52,6 +52,18 @@ class InvalidQuestionTransition(QuestionError):
     pass
 
 
+def _validate_scoring_values(*, marks, negative_marks) -> None:
+    try:
+        maximum = Decimal(str(marks))
+        penalty = Decimal(str(negative_marks))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise QuestionError("marks and negative_marks must be valid decimal values") from exc
+    if not maximum.is_finite() or not penalty.is_finite():
+        raise QuestionError("marks and negative_marks must be finite decimal values")
+    if penalty < 0 or penalty > maximum:
+        raise QuestionError("negative_marks must be between zero and the question's marks")
+
+
 def validate_block_content(*, block_type: str, content: dict) -> None:
     required = _BLOCK_REQUIRED_KEYS.get(block_type)
     if required is None:
@@ -108,6 +120,7 @@ def _snapshot_question_version(question: Question) -> QuestionVersion:
 def create_question(
     *, organization, actor, blocks: list[dict] | None = None, options: list[dict] | None = None, **fields
 ) -> Question:
+    _validate_scoring_values(marks=fields.get("marks"), negative_marks=fields.get("negative_marks", 0))
     question = Question.objects.create(organization=organization, created_by=actor, updated_by=actor, **fields)
     for block in blocks or []:
         validate_block_content(block_type=block["block_type"], content=block.get("content", {}))
@@ -135,6 +148,10 @@ def update_question(
         question.updated_by = actor
         _snapshot_question_version(question)
 
+    _validate_scoring_values(
+        marks=fields.get("marks", question.marks),
+        negative_marks=fields.get("negative_marks", question.negative_marks),
+    )
     for field, value in fields.items():
         setattr(question, field, value)
     question.updated_by = actor
