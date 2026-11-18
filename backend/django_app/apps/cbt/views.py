@@ -36,6 +36,8 @@ from .models import (
     Topic,
 )
 from .serializers import (
+    AttemptAnswerSubmissionSerializer,
+    AttemptFlagSubmissionSerializer,
     CBTExamSerializer,
     CBTMediaSerializer,
     ExamAttemptEventSerializer,
@@ -881,15 +883,19 @@ class AttemptAnswerView(APIView):
         attempt, err = _own_attempt_or_error(request, public_id)
         if err:
             return err
+        serializer = AttemptAnswerSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         exam_question = generics.get_object_or_404(
-            ExamQuestion.objects, public_id=request.data.get("exam_question"), exam=attempt.exam
+            ExamQuestion.objects,
+            public_id=serializer.validated_data["exam_question"],
+            exam=attempt.exam,
         )
         try:
             answer = attempt_service.save_answer(
                 attempt=attempt,
                 exam_question=exam_question,
-                response=request.data.get("response") or {},
-                time_spent_seconds=int(request.data.get("time_spent_seconds", 0)),
+                response=serializer.validated_data["response"],
+                time_spent_seconds=serializer.validated_data["time_spent_seconds"],
             )
         except AttemptError as exc:
             return error_envelope(str(exc), status=400)
@@ -903,12 +909,18 @@ class AttemptFlagView(APIView):
         attempt, err = _own_attempt_or_error(request, public_id)
         if err:
             return err
+        serializer = AttemptFlagSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         exam_question = generics.get_object_or_404(
-            ExamQuestion.objects, public_id=request.data.get("exam_question"), exam=attempt.exam
+            ExamQuestion.objects,
+            public_id=serializer.validated_data["exam_question"],
+            exam=attempt.exam,
         )
         try:
             answer = attempt_service.set_flag(
-                attempt=attempt, exam_question=exam_question, flagged=bool(request.data.get("flagged", True))
+                attempt=attempt,
+                exam_question=exam_question,
+                flagged=serializer.validated_data["flagged"],
             )
         except AttemptError as exc:
             return error_envelope(str(exc), status=400)
