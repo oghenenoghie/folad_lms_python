@@ -197,3 +197,37 @@ def test_valid_xlsx_upload_is_accepted(api_client, cbt_fixture_set, user_factory
     job = CBTImportJob.all_tenants.get(public_id=response.json()["data"]["public_id"])
     assert job.source_format == "xlsx"
     assert job.status == "uploaded"
+
+
+@pytest.mark.django_db
+def test_import_jobs_are_not_visible_to_another_tenant(
+    api_client, cbt_fixture_set, user_factory, other_organization, monkeypatch
+):
+    fs = cbt_fixture_set
+    owner = user_factory(
+        organization=fs["school"].organization, email="owner@example.com", password="secret-pass!"
+    )
+    _grant(owner, "cbt_questions.create")
+    _login(api_client, "owner@example.com", "secret-pass!")
+    monkeypatch.setattr("apps.core.storage.save_document", lambda **kwargs: "private/tenant-source")
+
+    created = api_client.post(
+        "/api/v1/cbt/import-jobs",
+        _upload(fs),
+        format="multipart",
+        HTTP_IDEMPOTENCY_KEY="cbt-import-0006",
+    )
+    assert created.status_code == 201, created.json()
+    public_id = created.json()["data"]["public_id"]
+
+    outsider = user_factory(
+        organization=other_organization, email="outsider@example.com", password="secret-pass!"
+    )
+    _grant(outsider, "cbt_questions.view")
+    _login(api_client, "outsider@example.com", "secret-pass!")
+
+    listing = api_client.get("/api/v1/cbt/import-jobs")
+    detail = api_client.get(f"/api/v1/cbt/import-jobs/{public_id}")
+    assert listing.status_code == 200
+    assert listing.json()["data"] == []
+    assert detail.status_code == 404
