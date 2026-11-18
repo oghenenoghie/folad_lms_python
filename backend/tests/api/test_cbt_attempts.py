@@ -62,7 +62,7 @@ def ready_exam(cbt_exam_fixture_set, cbt_question_factory, student_factory, staf
     # cbt_exam_factory's default pass_mark ("40.00") assumes a bigger exam
     # than this fixture's single 5-mark question — override so a fully
     # correct attempt on this exam actually passes.
-    exam.pass_mark = Decimal("3.00")
+    exam.pass_mark = Decimal("60.00")
     exam.save(update_fields=["start_at", "end_at", "duration_minutes", "pass_mark"])
 
     question = _single_choice_question(cbt_question_factory, fs)
