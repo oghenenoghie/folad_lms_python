@@ -144,3 +144,81 @@ def test_bulk_import_endpoint_requires_permission_and_returns_created_and_errors
     assert data["error_count"] == 1
     assert data["errors"][0]["row"] == 2
     assert Question.objects.count() == 1
+
+
+
+@pytest.mark.django_db
+def test_bulk_import_dry_run_validates_without_creating_questions(cbt_fixture_set):
+    fs = cbt_fixture_set
+    rows = [
+        {"question_type": "single_choice", "text": "Preview me", "option_a": "A", "option_b": "B", "correct": "B"},
+        {"question_type": "single_choice", "text": "Bad row", "option_a": "A", "correct": "A"},
+    ]
+    result = bulk_import_questions(
+        organization=fs["subject"].organization,
+        actor=None,
+        subject=fs["subject"],
+        class_level=fs["class_level"],
+        rows=rows,
+        dry_run=True,
+    )
+    assert result["dry_run"] is True
+    assert len(result["preview"]) == 1
+    assert result["preview"][0]["text"] == "Preview me"
+    assert result["errors"][0]["row"] == 2
+    assert Question.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_import_rejects_non_finite_or_invalid_scoring_values(cbt_fixture_set):
+    fs = cbt_fixture_set
+    rows = [
+        {"question_type": "single_choice", "text": "NaN marks", "marks": "NaN", "option_a": "A", "option_b": "B", "correct": "A"},
+        {"question_type": "single_choice", "text": "Penalty exceeds marks", "marks": "1", "negative_marks": "2", "option_a": "A", "option_b": "B", "correct": "A"},
+    ]
+    result = bulk_import_questions(
+        organization=fs["subject"].organization,
+        actor=None,
+        subject=fs["subject"],
+        class_level=fs["class_level"],
+        rows=rows,
+    )
+    assert result["created"] == []
+    assert len(result["errors"]) == 2
+    assert Question.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_import_endpoint_supports_xlsx_and_dry_run(
+    api_client, organization, user_factory, cbt_fixture_set
+):
+    from io import BytesIO
+    from openpyxl import Workbook
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    fs = cbt_fixture_set
+    user = user_factory(organization=organization, email="xlsx-admin@example.com", password="s3cret-pass!")
+    _grant(user, "cbt_questions.create")
+    _login(api_client, "xlsx-admin@example.com", "s3cret-pass!")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["question_type", "text", "option_a", "option_b", "correct", "marks"])
+    sheet.append(["single_choice", "What is 3+3?", "5", "6", "B", 2])
+    stream = BytesIO()
+    workbook.save(stream)
+    upload = SimpleUploadedFile(
+        "questions.xlsx", stream.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response = api_client.post(
+        "/api/v1/cbt/questions/bulk-import",
+        {"file": upload, "subject": str(fs["subject"].public_id), "class_level": str(fs["class_level"].public_id), "dry_run": "true"},
+        format="multipart",
+    )
+    assert response.status_code == 200, response.json()
+    data = response.json()["data"]
+    assert data["dry_run"] is True
+    assert data["valid_count"] == 1
+    assert data["preview"][0]["text"] == "What is 3+3?"
+    assert Question.objects.count() == 0
