@@ -27,7 +27,7 @@ from apps.tenancy.models import Organization
 _TERMINAL_STATUSES = {
     "completed", "completed_with_errors", "failed", "cancelled",
 }
-_PROCESSABLE_STATUSES = {"uploaded", "queued", "validating"}
+_PROCESSABLE_STATUSES = {"uploaded", "queued", "extracting", "validating"}
 _SAFE_FAILURE_CODE = "EXTRACTION_FAILED"
 _SAFE_FAILURE_MESSAGE = "The source could not be processed. Check the file and try again."
 
@@ -264,4 +264,51 @@ def dispatch_pending_cbt_imports() -> dict:
     finally:
         activate_organization(None)
 
+    return totals
+
+_RECONCILE_AFTER = timedelta(minutes=10)
+_RECONCILE_BATCH_PER_ORG = 100
+
+
+@shared_task(name="apps.cbt.tasks.imports.reconcile_published_cbt_imports")
+def reconcile_published_cbt_imports() -> dict:
+    """Requeue broker-acknowledged imports that never entered worker execution.
+
+    Published means the broker accepted a message, not that a worker completed
+    extraction. Stale jobs are re-dispatched; extraction is row-locked and
+    idempotent, so duplicate deliveries cannot duplicate preview items.
+    """
+    totals = {"organizations": 0, "requeued": 0, "failed": 0}
+    organization_ids = list(Organization.objects.filter(is_active=True).order_by("pk").values_list("pk", flat=True))
+    try:
+        for organization_id in organization_ids:
+            totals["organizations"] += 1
+            activate_organization(organization_id)
+            try:
+                stale_events = list(
+                    CBTImportOutboxEvent.objects.select_for_update(skip_locked=True)
+                    .select_related("job")
+                    .filter(
+                        organization_id=organization_id, event_type=_OUTBOX_EVENT_TYPE,
+                        status="published", published_at__lte=timezone.now() - _RECONCILE_AFTER,
+                        job__status__in=["uploaded", "queued", "extracting"],
+                    ).order_by("published_at", "pk")[:_RECONCILE_BATCH_PER_ORG]
+                )
+                for event in stale_events:
+                    if event.attempts >= _OUTBOX_MAX_ATTEMPTS:
+                        event.status = "failed"
+                        event.last_error = "MAX_DISPATCH_ATTEMPTS_EXCEEDED"
+                        event.save(update_fields=["status", "last_error", "updated_at"])
+                        totals["failed"] += 1
+                        continue
+                    event.status = "pending"
+                    event.available_at = timezone.now()
+                    event.published_at = None
+                    event.last_error = "WORKER_START_NOT_CONFIRMED"
+                    event.save(update_fields=["status", "available_at", "published_at", "last_error", "updated_at"])
+                    totals["requeued"] += 1
+            finally:
+                activate_organization(None)
+    finally:
+        activate_organization(None)
     return totals
