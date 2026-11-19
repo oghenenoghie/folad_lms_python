@@ -231,7 +231,7 @@ def dispatch_pending_cbt_imports() -> dict:
     }
     organization_ids = list(Organization.objects.filter(is_active=True).order_by("pk").values_list("pk", flat=True))
     try:
-        for organization_id in organization_ids.iterator():
+        for organization_id in organization_ids:
             totals["organizations"] += 1
             activate_organization(organization_id)
             try:
