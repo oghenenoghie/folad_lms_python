@@ -130,7 +130,7 @@ def test_exhausted_publish_attempts_are_marked_failed(
 ):
     fs = cbt_fixture_set
     user = user_factory(organization=fs["school"].organization)
-    _, event = _create_outbox(fs, user, attempts=7)
+    job, event = _create_outbox(fs, user, attempts=7)
     monkeypatch.setattr(
         "apps.cbt.tasks.imports.extract_cbt_import_job.apply_async",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("broker unavailable")),
@@ -144,4 +144,7 @@ def test_exhausted_publish_attempts_are_marked_failed(
     assert event.status == "failed"
     assert event.attempts == 8
     assert event.last_error == "BROKER_PUBLISH_FAILED"
+    job.refresh_from_db()
+    assert job.status == "failed"
+    assert job.failure_code == "DISPATCH_FAILED"
     activate_organization(None)
