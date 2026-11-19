@@ -266,6 +266,21 @@ def dispatch_pending_cbt_imports() -> dict:
 
     return totals
 
+
+def _fail_unstarted_import(*, job, organization):
+    """Keep the job lifecycle authoritative when dispatch is permanently exhausted."""
+    if job.status in _TERMINAL_STATUSES:
+        return job
+    if job.status == "uploaded":
+        transition_import_job(job_id=job.pk, organization=organization, to_status="queued")
+        job.refresh_from_db()
+    if job.status in {"queued", "extracting"}:
+        return transition_import_job(
+            job_id=job.pk, organization=organization, to_status="failed",
+            failure_code="DISPATCH_FAILED",
+            failure_message="The import could not be scheduled for processing. Please try again or contact support.",
+        )
+    return job
 _RECONCILE_AFTER = timedelta(minutes=10)
 _RECONCILE_BATCH_PER_ORG = 100
 
@@ -299,6 +314,7 @@ def reconcile_published_cbt_imports() -> dict:
                         event.status = "failed"
                         event.last_error = "MAX_DISPATCH_ATTEMPTS_EXCEEDED"
                         event.save(update_fields=["status", "last_error", "updated_at"])
+                        _fail_unstarted_import(job=event.job, organization=event.organization)
                         totals["failed"] += 1
                         continue
                     event.status = "pending"
