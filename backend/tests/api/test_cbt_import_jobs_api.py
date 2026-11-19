@@ -65,7 +65,7 @@ def test_csv_upload_creates_private_uploaded_job_without_dispatch(
     assert job.storage_key == "private/cbt-import-source"
     assert job.source_format == "csv"
     assert job.source_size_bytes > 0
-    assert data["processing_status"] == "not_configured"
+    assert data["processing_status"] == "pending_dispatch"
     assert data["processing_dispatched"] is False
     assert "storage_key" not in data
     assert len(saved) == 1
@@ -235,3 +235,38 @@ def test_import_jobs_are_not_visible_to_another_tenant(
     assert listing.status_code == 200
     assert listing.json()["data"] == {}
     assert detail.status_code == 404
+
+@pytest.mark.django_db
+def test_import_job_detail_reports_broker_acceptance_not_worker_completion(
+    api_client, cbt_fixture_set, user_factory, monkeypatch
+):
+    fs = cbt_fixture_set
+    user = user_factory(
+        organization=fs["school"].organization, email="status@example.com", password="secret-pass!"
+    )
+    _grant(user, "cbt_questions.create", "cbt_questions.view")
+    _login(api_client, "status@example.com", "secret-pass!")
+    monkeypatch.setattr("apps.core.storage.save_document", lambda **kwargs: "private/status-source")
+
+    created = api_client.post(
+        "/api/v1/cbt/import-jobs",
+        _upload(fs),
+        format="multipart",
+        HTTP_IDEMPOTENCY_KEY="cbt-import-status-01",
+    )
+    assert created.status_code == 201, created.json()
+    public_id = created.json()["data"]["public_id"]
+    job = CBTImportJob.all_tenants.get(public_id=public_id)
+    event = CBTImportOutboxEvent.all_tenants.get(job=job, event_type="extract_source")
+    event.status = "published"
+    event.save(update_fields=["status", "updated_at"])
+
+    detail = api_client.get(f"/api/v1/cbt/import-jobs/{public_id}")
+    assert detail.status_code == 200, detail.json()
+    data = detail.json()["data"]
+    assert data["processing_status"] == "broker_accepted"
+    assert data["processing_dispatched"] is True
+    # The API must not claim extraction completed merely because Redis
+    # accepted the task message.
+    assert data["status"] == "uploaded"
+

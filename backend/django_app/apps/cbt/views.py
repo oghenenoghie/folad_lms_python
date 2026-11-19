@@ -1124,26 +1124,42 @@ class StudentAnswerGradeView(APIView):
         return envelope(StudentAnswerSerializer(answer).data)
 
 
-class CBTImportJobListCreateView(APIView):
-    """Create durable source-import jobs and list the caller's tenant jobs.
+def _import_processing_metadata(job):
+    """Expose durable outbox state without claiming worker completion."""
+    event = next(iter(job.outbox_events.all()), None)
+    if event is None:
+        return {"processing_status": "not_configured", "processing_dispatched": False}
 
-    Uploads are validated and stored privately. No Celery task is dispatched
-    until the dedicated production imports worker has been deployed/verified.
-    """
+    status = {
+        "pending": "pending_dispatch",
+        "publishing": "publishing",
+        "published": "broker_accepted",
+        "failed": "dispatch_failed",
+    }.get(event.status, "unknown")
+    return {
+        "processing_status": status,
+        # Published means the broker accepted the message, not that a worker
+        # consumed it or completed extraction.
+        "processing_dispatched": event.status == "published",
+    }
+
+
+class CBTImportJobListCreateView(APIView):
+    """Create durable source-import jobs and list the caller's tenant jobs."""
 
     def get_permissions(self):
         code = "cbt_questions.create" if self.request.method == "POST" else "cbt_questions.view"
         return [IsAuthenticated(), require_permission(code)()]
 
     def get(self, request):
-        jobs = (
+        jobs = list(
             CBTImportJob.objects.select_related("school", "subject", "class_level")
+            .prefetch_related("outbox_events")
             .order_by("-created_at")[:100]
         )
         data = CBTImportJobSerializer(jobs, many=True).data
-        for item in data:
-            item["processing_status"] = "not_configured"
-            item["processing_dispatched"] = False
+        for item, job in zip(data, jobs, strict=True):
+            item.update(_import_processing_metadata(job))
         return envelope(data)
 
     def post(self, request):
@@ -1190,12 +1206,11 @@ class CBTImportJobListCreateView(APIView):
             return error_envelope(str(exc), status=409)
 
         data = CBTImportJobSerializer(job).data
-        data["processing_status"] = "not_configured"
-        data["processing_dispatched"] = False
+        data.update(_import_processing_metadata(job))
         return envelope(
             data,
             message=(
-                "source stored; processing is not configured until the imports worker is deployed"
+                "source stored; extraction is pending dispatch"
                 if created else "existing import job returned for this idempotency key"
             ),
             status=201 if created else 200,
@@ -1208,12 +1223,12 @@ class CBTImportJobDetailView(APIView):
 
     def get(self, request, public_id):
         job = generics.get_object_or_404(
-            CBTImportJob.objects.select_related("school", "subject", "class_level"),
+            CBTImportJob.objects.select_related("school", "subject", "class_level")
+            .prefetch_related("outbox_events"),
             public_id=public_id,
         )
         data = CBTImportJobSerializer(job).data
-        data["processing_status"] = "not_configured"
-        data["processing_dispatched"] = False
+        data.update(_import_processing_metadata(job))
         return envelope(data)
 
 
