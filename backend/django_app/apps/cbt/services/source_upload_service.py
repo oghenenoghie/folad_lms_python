@@ -14,8 +14,9 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
-from apps.cbt.models import CBTImportJob
+from apps.cbt.models import CBTImportJob, CBTImportOutboxEvent
 
 
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
@@ -177,6 +178,22 @@ def _matches_existing(job, *, source, school, subject, class_level) -> bool:
     )
 
 
+def _ensure_extraction_outbox(job):
+    """Persist one extraction intent for an uploaded job, idempotently."""
+    if job.status != "uploaded":
+        return None
+    event, _ = CBTImportOutboxEvent.objects.get_or_create(
+        job=job,
+        event_type="extract_source",
+        defaults={
+            "organization_id": job.organization_id,
+            "payload": {"job_public_id": str(job.public_id)},
+            "available_at": timezone.now(),
+        },
+    )
+    return event
+
+
 def create_source_import_job(
     *, organization, actor, school, subject, class_level, source: ValidatedSource, idempotency_key: str
 ):
@@ -195,6 +212,8 @@ def create_source_import_job(
     if existing:
         if not _matches_existing(existing, source=source, school=school, subject=subject, class_level=class_level):
             raise ImportIdempotencyConflict("Idempotency-Key was already used for a different upload or target")
+        with transaction.atomic():
+            _ensure_extraction_outbox(existing)
         return existing, False
 
     stored_key = save_document(
@@ -222,6 +241,8 @@ def create_source_import_job(
                 idempotency_key=key,
                 status="uploaded",
             )
+            # The job and its dispatch intent are one atomic database commit.
+            _ensure_extraction_outbox(job)
         return job, True
     except IntegrityError:
         delete_document(stored_key)
