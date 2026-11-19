@@ -1,9 +1,9 @@
 # Deploying the Django app to Railway (with existing Neon Postgres)
 
 This document is specific to this repository. It covers the **Django web
-service only** (`backend/django_app`) — the FastAPI edge service, Celery
-worker/beat, and the (not-yet-built) Next.js frontend described in
-`docs/ARCHITECTURE.md` are out of scope for this deployment.
+service** (`backend/django_app`) and the separately deployable CBT import
+worker. The FastAPI edge service, Celery beat, and the (not-yet-built)
+Next.js frontend described in `docs/ARCHITECTURE.md` are out of scope.
 
 ```
 GitHub  →  Railway  →  Django web service  →  Gunicorn  →  Django  →  Neon Postgres (existing)
@@ -459,29 +459,34 @@ database connection limits, object-storage throughput, memory, and import
 duration. Each additional worker process can increase concurrent database
 and storage load.
 
-**Important implementation gate:** this configuration deploys the worker
-process, but it does not by itself implement or enable import task dispatch.
-The current import upload API deliberately returns
+**Current implementation status:** the repository now contains the
+tenant-scoped Celery task `apps.cbt.tasks.imports.extract_cbt_import_job`.
+It is registered through Celery task autodiscovery and routed to the
+`imports` queue in `config/celery.py`. The task re-establishes the tenant
+context from its persisted job locator, uses the locked/idempotent extraction
+service, retries unexpected infrastructure failures up to three times, and
+records deterministic or exhausted failures with a safe public message.
+PostgreSQL-backed unit tests cover successful extraction/replay, mismatched
+tenant locators, failure handling, and cancelled jobs.
+
+**Dispatch remains deliberately disabled:** the upload API still returns
 `processing_status=not_configured` and `processing_dispatched=false`.
-The repository's extraction service is callable synchronously, but an
-audited Celery task wrapper, task registration, dispatch-after-commit,
-retry/recovery policy, and task-status reconciliation must be implemented
-and tested before any API endpoint enqueues work. Do not manually enqueue
-arbitrary task names or mark jobs as processing merely because the worker is
-online. Until that task implementation is merged and verified, an idle
-worker is expected and safe.
+Creating a worker service does not automatically enqueue jobs, and the
+existing task tests do not prove that production Railway has a healthy worker.
+Do not enqueue tasks manually or mark jobs as processing merely because the
+worker is online. Until the production worker is deployed and health-checked,
+an idle worker is expected and safe.
 
-Before enabling dispatch, acceptance checks must demonstrate:
+Before enabling API dispatch, the remaining acceptance checks must demonstrate:
 
-- a task is registered and routed to the `imports` queue;
+- the dedicated production worker is running, connected to the same Redis
+  broker as Django, and consuming the `imports` queue;
 - enqueue happens only after the import-job database transaction commits;
+- dispatch failures leave the job in a recoverable state and are visible
+  without falsely reporting that processing started;
+- duplicate delivery is idempotent and concurrent execution is serialized;
 - tenant ownership is re-established from the persisted job, not trusted
   from task arguments supplied by a client;
-- duplicate delivery is idempotent and concurrent execution is serialized;
-- worker crashes leave a recoverable job state, with bounded retries and
-  visible terminal errors;
-- the task can read the private source object and writes only the intended
-  tenant's import ledger;
 - cancellation and commit cannot race with extraction to produce partial
   or duplicated question records;
 - logs and task results contain no source contents, credentials, or
