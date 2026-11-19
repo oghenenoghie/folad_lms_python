@@ -469,13 +469,17 @@ records deterministic or exhausted failures with a safe public message.
 PostgreSQL-backed unit tests cover successful extraction/replay, mismatched
 tenant locators, failure handling, and cancelled jobs.
 
-**Dispatch remains deliberately disabled:** the upload API still returns
-`processing_status=not_configured` and `processing_dispatched=false`.
-Creating a worker service does not automatically enqueue jobs, and the
-existing task tests do not prove that production Railway has a healthy worker.
-Do not enqueue tasks manually or mark jobs as processing merely because the
-worker is online. Until the production worker is deployed and health-checked,
-an idle worker is expected and safe.
+**Dispatch is controlled by the separate Beat service:** uploads persist a
+pending outbox event in the same transaction as the import job. Without the
+Beat scheduler, that event remains pending and no broker message is sent.
+When Beat is running, it publishes the event to Redis; the API then reports
+`processing_status=broker_accepted` and
+`processing_dispatched=true`. This means only that the broker accepted the
+message — it does not prove a worker consumed it or extraction completed.
+The job's own lifecycle status remains authoritative for extraction progress.
+A worker alone does not dispatch pending events; Beat and worker must both
+be deployed, connected to the same broker, and health-checked before
+user-facing asynchronous processing is considered operational.
 
 Before enabling API dispatch, the remaining acceptance checks must demonstrate:
 
@@ -524,12 +528,13 @@ To run the scheduler on Railway:
    same queue. Monitor outbox counts by status, retries, failed events,
    queue depth, and extraction task outcomes.
 
-**Safety:** this adds a periodic dispatcher, but does not enable publishing
-from the upload API and does not establish that Railway services have been
-created or are healthy. The outbox is durable before a scheduler exists;
-pending events simply remain pending. A broker acknowledgement lost after
-the broker accepted a message can cause duplicate delivery after the
-five-minute lease expires; the extraction task must remain idempotent.
-Do not run multiple beat replicas. Do not enable production import
-processing until the worker and beat services are independently
-health-checked and the PostgreSQL acceptance suite passes.
+**Safety:** uploads never publish directly from the API; they only create
+a durable outbox event. The separately deployed Beat service controls when
+those events are published. This repository change does not establish that
+Railway services have been created or are healthy. A broker acknowledgement
+lost after the broker accepted a message can cause duplicate delivery after
+the five-minute lease expires; the extraction task must remain idempotent.
+Do not run multiple Beat replicas. Do not treat `broker_accepted` as proof
+of extraction completion. Do not enable production import processing until
+the worker and Beat services are independently health-checked and the
+PostgreSQL acceptance suite passes.
