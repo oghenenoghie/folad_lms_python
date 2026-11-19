@@ -285,6 +285,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 30.0,
         "options": {"queue": "imports"},
     },
+    "reconcile-published-cbt-imports": {
+        "task": "apps.cbt.tasks.imports.reconcile_published_cbt_imports",
+        "schedule": 60.0,
+        "options": {"queue": "imports"},
+    },
 }
 
 # --- DRF ---
