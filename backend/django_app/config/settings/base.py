@@ -276,6 +276,16 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_DEFAULT_QUEUE = "default"
+# The dedicated Celery Beat process schedules durable CBT import outbox
+# publication. The task is safe to run concurrently and tenant-scopes every
+# claim; no API request publishes directly to the broker.
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-cbt-import-outbox": {
+        "task": "apps.cbt.tasks.imports.dispatch_pending_cbt_imports",
+        "schedule": 30.0,
+        "options": {"queue": "imports"},
+    },
+}
 
 # --- DRF ---
 REST_FRAMEWORK = {
