@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("cbt", "0022_join_duplicate_merge_leaves"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("tenancy", "__latest__"),
+        ("tenancy", "0001_initial"),
     ]
 
     operations = [
