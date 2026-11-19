@@ -243,6 +243,9 @@ def dispatch_pending_cbt_imports() -> dict:
                     if claim is None:
                         break
                     if claim.get("status") == "exhausted":
+                        job = CBTImportJob.objects.filter(public_id=claim["job_public_id"], organization_id=organization_id).first()
+                        if job is not None:
+                            _fail_unstarted_import(job=job, organization=job.organization)
                         totals["failed"] += 1
                         continue
 
@@ -259,6 +262,10 @@ def dispatch_pending_cbt_imports() -> dict:
 
                     if outcome in totals:
                         totals[outcome] += 1
+                    if outcome == "failed":
+                        job = CBTImportJob.objects.filter(public_id=claim["job_public_id"], organization_id=organization_id).first()
+                        if job is not None:
+                            _fail_unstarted_import(job=job, organization=job.organization)
             finally:
                 activate_organization(None)
     finally:
