@@ -154,7 +154,7 @@ def _claim_outbox_event(*, organization_id: int, now):
             event.locked_at = None
             event.last_error = "MAX_PUBLISH_ATTEMPTS_EXCEEDED"
             event.save(update_fields=["status", "locked_at", "last_error", "updated_at"])
-            return {"status": "exhausted"}
+            return {"status": "exhausted", "job_public_id": str(event.job.public_id)}
 
         claimed_at = now
         event.status = "publishing"
@@ -300,29 +300,30 @@ def reconcile_published_cbt_imports() -> dict:
             totals["organizations"] += 1
             activate_organization(organization_id)
             try:
-                stale_events = list(
-                    CBTImportOutboxEvent.objects.select_for_update(skip_locked=True)
-                    .select_related("job")
-                    .filter(
-                        organization_id=organization_id, event_type=_OUTBOX_EVENT_TYPE,
-                        status="published", published_at__lte=timezone.now() - _RECONCILE_AFTER,
-                        job__status__in=["uploaded", "queued", "extracting"],
-                    ).order_by("published_at", "pk")[:_RECONCILE_BATCH_PER_ORG]
-                )
-                for event in stale_events:
-                    if event.attempts >= _OUTBOX_MAX_ATTEMPTS:
-                        event.status = "failed"
-                        event.last_error = "MAX_DISPATCH_ATTEMPTS_EXCEEDED"
-                        event.save(update_fields=["status", "last_error", "updated_at"])
-                        _fail_unstarted_import(job=event.job, organization=event.organization)
-                        totals["failed"] += 1
-                        continue
-                    event.status = "pending"
-                    event.available_at = timezone.now()
-                    event.published_at = None
-                    event.last_error = "WORKER_START_NOT_CONFIRMED"
-                    event.save(update_fields=["status", "available_at", "published_at", "last_error", "updated_at"])
-                    totals["requeued"] += 1
+                with transaction.atomic():
+                    stale_events = list(
+                        CBTImportOutboxEvent.objects.select_for_update(skip_locked=True)
+                        .select_related("job")
+                        .filter(
+                            organization_id=organization_id, event_type=_OUTBOX_EVENT_TYPE,
+                            status="published", published_at__lte=timezone.now() - _RECONCILE_AFTER,
+                            job__status__in=["uploaded", "queued", "extracting"],
+                        ).order_by("published_at", "pk")[:_RECONCILE_BATCH_PER_ORG]
+                    )
+                    for event in stale_events:
+                        if event.attempts >= _OUTBOX_MAX_ATTEMPTS:
+                            event.status = "failed"
+                            event.last_error = "MAX_DISPATCH_ATTEMPTS_EXCEEDED"
+                            event.save(update_fields=["status", "last_error", "updated_at"])
+                            _fail_unstarted_import(job=event.job, organization=event.organization)
+                            totals["failed"] += 1
+                            continue
+                        event.status = "pending"
+                        event.available_at = timezone.now()
+                        event.published_at = None
+                        event.last_error = "WORKER_START_NOT_CONFIRMED"
+                        event.save(update_fields=["status", "available_at", "published_at", "last_error", "updated_at"])
+                        totals["requeued"] += 1
             finally:
                 activate_organization(None)
     finally:
