@@ -857,3 +857,46 @@ class CBTImportIssue(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.code}: {self.message[:80]}"
+
+
+class CBTImportOutboxEvent(BaseModel):
+    """Transactional intent to dispatch one CBT import background action.
+
+    The event is committed in the same database transaction as its import
+    job. A separate dispatcher can publish pending events to Celery and mark
+    them published; the API never relies on a best-effort broker call.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("publishing", "Publishing"),
+        ("published", "Published"),
+        ("failed", "Failed"),
+    ]
+
+    organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
+    job = models.ForeignKey(CBTImportJob, on_delete=models.CASCADE, related_name="outbox_events")
+    event_type = models.CharField(max_length=80)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    attempts = models.PositiveIntegerField(default=0)
+    available_at = models.DateTimeField()
+    locked_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+
+    objects = TenantManager()
+    all_tenants = models.Manager()
+
+    class Meta:
+        db_table = "cbt_import_outbox_event"
+        ordering = ["available_at", "created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "event_type"], name="uq_cbt_import_outbox_job_event"),
+        ]
+        indexes = [
+            models.Index(fields=["organization", "status", "available_at"], name="cbt_outbox_org_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} for import {self.job_id} ({self.status})"

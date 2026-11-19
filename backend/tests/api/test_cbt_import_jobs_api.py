@@ -3,7 +3,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
-from apps.cbt.models import CBTImportJob
+from apps.cbt.models import CBTImportJob, CBTImportOutboxEvent
 
 
 def _grant(user, *codes):
@@ -59,6 +59,9 @@ def test_csv_upload_creates_private_uploaded_job_without_dispatch(
     data = response.json()["data"]
     job = CBTImportJob.all_tenants.get(public_id=data["public_id"])
     assert job.status == "uploaded"
+    event = CBTImportOutboxEvent.objects.get(job=job, event_type="extract_source")
+    assert event.status == "pending"
+    assert event.payload == {"job_public_id": str(job.public_id)}
     assert job.storage_key == "private/cbt-import-source"
     assert job.source_format == "csv"
     assert job.source_size_bytes > 0
@@ -103,6 +106,7 @@ def test_repeated_idempotent_upload_returns_same_job_without_second_storage_writ
     assert first.json()["data"]["public_id"] == second.json()["data"]["public_id"]
     assert len(saved) == 1
     assert CBTImportJob.all_tenants.count() == 1
+    assert CBTImportOutboxEvent.all_tenants.count() == 1
 
 
 @pytest.mark.django_db
