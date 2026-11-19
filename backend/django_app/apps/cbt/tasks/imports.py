@@ -5,10 +5,14 @@ organization ID is used to establish the RLS context, then the job is fetched
 again with both identifiers so a stale or malformed broker message cannot
 cross tenant boundaries.
 """
+from datetime import timedelta
+
 from celery import shared_task
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
-from apps.cbt.models import CBTImportJob
+from apps.cbt.models import CBTImportJob, CBTImportOutboxEvent
 from apps.cbt.services.import_extraction_service import (
     ImportExtractionError,
     extract_import_job,
@@ -121,12 +125,6 @@ def extract_cbt_import_job(self, job_public_id: str, organization_id: int) -> di
 # Outbox publishing is intentionally independent of API requests. A beat
 # scheduler invokes this task; every claim is short and tenant-scoped, while
 # the broker call happens outside the database transaction.
-from datetime import timedelta
-
-from django.db.models import Q
-from django.utils import timezone
-
-from apps.cbt.models import CBTImportOutboxEvent
 
 _OUTBOX_EVENT_TYPE = "extract_source"
 _OUTBOX_MAX_ATTEMPTS = 8
@@ -231,7 +229,7 @@ def dispatch_pending_cbt_imports() -> dict:
         "failed": 0,
         "claim_lost": 0,
     }
-    organization_ids = Organization.objects.filter(is_active=True).order_by("pk").values_list("pk", flat=True)
+    organization_ids = list(Organization.objects.filter(is_active=True).order_by("pk").values_list("pk", flat=True))
     try:
         for organization_id in organization_ids.iterator():
             totals["organizations"] += 1
