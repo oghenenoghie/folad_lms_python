@@ -1,0 +1,13 @@
+# Dedicated Railway Celery Beat scheduler.
+# Run exactly one replica of this service; multiple beat schedulers would
+# publish duplicate periodic dispatch ticks (the outbox remains idempotent,
+# but single-scheduler operation is simpler and cheaper).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "infrastructure/docker/backend.Dockerfile"
+
+[deploy]
+startCommand = "sh -c 'cd django_app && celery -A config beat -l info --pidfile=/tmp/celerybeat.pid --schedule=/tmp/celerybeat-schedule'"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

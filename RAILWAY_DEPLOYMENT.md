@@ -494,3 +494,42 @@ Before enabling API dispatch, the remaining acceptance checks must demonstrate:
 
 A successful Railway deployment proves only that the worker process is
 running. It is not proof that the import workflow is operational.
+
+
+## 20. Dedicated Celery Beat scheduler for CBT import outbox
+
+The outbox dispatcher is scheduled every 30 seconds by
+`CELERY_BEAT_SCHEDULE` in Django settings. The dispatcher is not an HTTP
+request handler: it scans active organizations, activates each tenant's
+normal RLS context, claims due outbox rows with `SELECT ... FOR UPDATE
+SKIP LOCKED`, and publishes extraction task messages outside the claim
+transaction. Broker failures are recorded using a fixed safe error code and
+exponential retry delay (30 seconds up to 15 minutes); a publishing lease
+older than five minutes can be reclaimed. After eight publish attempts an
+event is marked failed for operator review.
+
+To run the scheduler on Railway:
+
+1. Add one separate service from this repository named
+   `cbt-import-beat`.
+2. Set its Config-as-code path to `railway.beat.toml`. Do not change
+   `railway.toml` or `railway.worker.toml`.
+3. Supply the same production `DJANGO_SETTINGS_MODULE`,
+   `DJANGO_SECRET_KEY`, least-privilege direct `DATABASE_URL`, and
+   `REDIS_URL` used by the import worker. The beat service does not need
+   object-storage credentials and must not run migrations.
+4. Keep exactly one beat replica. Confirm the Beat process starts and
+   publishes the named dispatcher task to the `imports` queue.
+5. Confirm the dedicated `cbt-import-worker` is running and consumes that
+   same queue. Monitor outbox counts by status, retries, failed events,
+   queue depth, and extraction task outcomes.
+
+**Safety:** this adds a periodic dispatcher, but does not enable publishing
+from the upload API and does not establish that Railway services have been
+created or are healthy. The outbox is durable before a scheduler exists;
+pending events simply remain pending. A broker acknowledgement lost after
+the broker accepted a message can cause duplicate delivery after the
+five-minute lease expires; the extraction task must remain idempotent.
+Do not run multiple beat replicas. Do not enable production import
+processing until the worker and beat services are independently
+health-checked and the PostgreSQL acceptance suite passes.
