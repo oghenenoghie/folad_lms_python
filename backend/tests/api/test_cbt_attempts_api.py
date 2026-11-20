@@ -584,3 +584,57 @@ def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
         "exam_live_status": 404,
         "question_detail": 404,
     }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid_marks", ["NaN", "Infinity", "-Infinity", True, [], {}])
+def test_staff_grade_rejects_non_finite_or_non_numeric_marks(api_client, organization, user_factory, ready_exam, invalid_marks):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    grader = user_factory(organization=organization, email="grade-input-check@example.com", password="s3cret-pass!")
+    _grant(grader, "cbt_attempts.grade")
+    _login(api_client, "grade-input-check@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        {"marks_awarded": invalid_marks},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.json()
+    answer.refresh_from_db()
+    assert answer.graded_at is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid_payload", [{}, {"marks_awarded": "1.001"}, {"marks_awarded": "-0.01"}])
+def test_staff_grade_rejects_missing_negative_or_excess_precision(api_client, organization, user_factory, ready_exam, invalid_payload):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    grader = user_factory(organization=organization, email="grade-input-boundary@example.com", password="s3cret-pass!")
+    _grant(grader, "cbt_attempts.grade")
+    _login(api_client, "grade-input-boundary@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        invalid_payload,
+        format="json",
+    )
+
+    assert response.status_code == 400, response.json()
+    answer.refresh_from_db()
+    assert answer.graded_at is None
