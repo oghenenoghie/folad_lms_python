@@ -24,6 +24,7 @@ ANNOUNCEMENT_AUDIENCE_CHOICES = [
 NOTIFICATION_TYPE_CHOICES = [
     ("announcement", "Announcement"),
     ("system", "System"),
+    ("fee_reminder", "Fee reminder"),
 ]
 
 

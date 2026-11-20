@@ -175,6 +175,11 @@ class Invoice(BaseModel):
     status = models.CharField(max_length=20, choices=INVOICE_STATUS_CHOICES, default="draft")
     due_date = models.DateField(null=True, blank=True)
     issued_at = models.DateTimeField(null=True, blank=True)
+    # Set by apps.finance.services.reminder_service whenever a fee reminder
+    # notification is sent for this invoice — the cooldown that keeps the
+    # daily send_fee_reminders task from re-notifying the same invoice
+    # every single day it stays due-soon/overdue.
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
     objects = TenantManager()
     all_tenants = models.Manager()

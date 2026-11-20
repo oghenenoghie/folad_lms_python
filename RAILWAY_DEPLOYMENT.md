@@ -388,6 +388,25 @@ risky manual operation against production data:
    `neondatabase/create-branch-action` mechanism can be used ad hoc from
    the Neon console for a manual pre-change snapshot.
 
+## 19. Scheduled tasks (fee reminders, etc.)
+
+`apps.finance.tasks.notifications.send_fee_reminders` is scheduled daily
+via `config/celery.py`'s `beat_schedule` — but as noted at the top of
+this doc, **no Celery worker or beat process is deployed on Railway
+yet**, so a beat-scheduled task alone will not actually fire in this
+environment. Until a worker/beat service is added:
+
+- Run `python manage.py send_fee_reminders` — it executes the same logic
+  synchronously, in-process, no broker/worker needed.
+- Wire that command into whatever scheduling this deployment already has
+  (Railway's own cron/scheduled-job feature, or an external scheduler
+  hitting a protected endpoint) to actually get daily reminders, rather
+  than relying on Celery Beat.
+- Once a real worker + beat process is deployed, `beat_schedule` takes
+  over on its own and the manual command becomes redundant (safe to keep
+  running either way — the cooldown in `reminder_service` prevents
+  double-sending).
+
 ---
 
 ## Verification performed before writing this document
