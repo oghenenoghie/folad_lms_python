@@ -52,7 +52,8 @@ Candidate answer and flag endpoints validate request payloads before resolving q
 - `response` must be a JSON object; arrays, strings, numbers and null are rejected.
 - `time_spent_seconds` must be an integer greater than or equal to zero. Malformed values are returned as client validation errors rather than leaking conversion exceptions as server errors.
 - `flagged` uses serializer boolean parsing, so an explicit false value is not accidentally converted to true by Python truthiness.
-- API regression coverage includes malformed/negative time, non-object responses and false flag values.
+- Staff manual grading parses `marks_awarded` through a bounded decimal serializer; missing values, booleans, non-numeric values, NaN/infinity, negative values and excess decimal precision are rejected before the grading service runs.
+- API regression coverage includes malformed/negative time, non-object responses, false flag values and invalid manual-grading numbers.
 
 These checks validate the transport contract; the attempt service remains responsible for domain invariants, deadline enforcement and locking.
 

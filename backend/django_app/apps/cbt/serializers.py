@@ -338,6 +338,12 @@ class AttemptFlagSubmissionSerializer(serializers.Serializer):
     exam_question = serializers.UUIDField()
     flagged = serializers.BooleanField(required=False, default=True)
 
+
+class StudentAnswerGradeSubmissionSerializer(serializers.Serializer):
+    """Reject malformed and non-finite marks before domain grading."""
+
+    marks_awarded = serializers.DecimalField(max_digits=8, decimal_places=2, min_value=0)
+
 class ExamAttemptEventSerializer(serializers.ModelSerializer):
     """`event_type` is write-once-per-row (a client reports what happened;
     nothing about a logged event is ever edited), so this is writable only
