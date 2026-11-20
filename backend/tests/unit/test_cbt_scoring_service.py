@@ -228,3 +228,50 @@ def test_negative_mark_configuration_must_be_between_zero_and_question_marks():
         _validate_scoring_values(marks="5.00", negative_marks="-0.01")
     with pytest.raises(QuestionError):
         _validate_scoring_values(marks="5.00", negative_marks="5.01")
+
+
+@pytest.mark.parametrize("submitted", ["NaN", "Infinity", "-Infinity", None, "not-a-number"])
+def test_numeric_malformed_or_non_finite_candidate_response_is_incorrect(submitted):
+    eq = _FakeExamQuestion(_snapshot("numeric", [{"content": {"value": 42, "tolerance": 0.5}}]))
+
+    correct, marks = grade_response(exam_question=eq, response={"value": submitted})
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_numeric_non_finite_or_negative_tolerance_in_answer_key_is_configuration_error():
+    for tolerance in ("NaN", "Infinity", "-0.1"):
+        eq = _FakeExamQuestion(_snapshot("numeric", [{"content": {"value": 42, "tolerance": tolerance}}]))
+        with pytest.raises(ScoringError):
+            grade_response(exam_question=eq, response={"value": 42})
+
+
+def test_multiple_choice_rejects_unhashable_or_non_string_labels_without_crashing():
+    eq = _FakeExamQuestion(_snapshot("multiple_choice", [{"label": "A", "is_correct": True}]))
+
+    for submitted in ([["A"]], "A", [1]):
+        correct, marks = grade_response(exam_question=eq, response={"selected_option_labels": submitted})
+        assert correct is False
+        assert marks == Decimal("0")
+
+
+@pytest.mark.parametrize("coordinates", [
+    {"x": "NaN", "y": 10},
+    {"x": "Infinity", "y": 10},
+    {"x": None, "y": 10},
+])
+def test_hotspot_malformed_or_non_finite_candidate_coordinates_are_incorrect(coordinates):
+    eq = _FakeExamQuestion(_snapshot("hotspot", [{"content": {"x": 10, "y": 10, "tolerance": 5}}]))
+
+    correct, marks = grade_response(exam_question=eq, response=coordinates)
+
+    assert correct is False
+    assert marks == Decimal("0")
+
+
+def test_hotspot_non_finite_or_negative_answer_key_tolerance_is_configuration_error():
+    for tolerance in ("NaN", "Infinity", -1):
+        eq = _FakeExamQuestion(_snapshot("hotspot", [{"content": {"x": 10, "y": 10, "tolerance": tolerance}}]))
+        with pytest.raises(ScoringError):
+            grade_response(exam_question=eq, response={"x": 10, "y": 10})
