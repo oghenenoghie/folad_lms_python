@@ -160,9 +160,9 @@ def grade_response(*, exam_question, response: dict) -> tuple[bool, Decimal]:
 
     # Empty/blank responses are unanswered, not wrong answers. This also
     # covers StudentAnswer rows created solely to flag a question. Check
-    # before calling the type-specific grader: numeric/matching graders
-    # correctly reject malformed attempted answers, but an empty response
-    # must remain an ordinary unanswered item.
+    # before calling the type-specific grader: malformed non-blank values
+    # are treated as incorrect answers, but an empty response must remain
+    # an ordinary unanswered item.
     has_response = any(
         value is not None
         and not (isinstance(value, str) and not value.strip())
