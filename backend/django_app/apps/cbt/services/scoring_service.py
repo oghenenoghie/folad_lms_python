@@ -5,7 +5,8 @@ not whatever the bank question has become since). Covers every
 AUTO_GRADABLE_QUESTION_TYPES entry; a subjective type is never graded
 here — see apps.cbt.services.attempt_service.grade_subjective_answer.
 """
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import math
 
 from apps.cbt.models import AUTO_GRADABLE_QUESTION_TYPES
 
@@ -19,16 +20,20 @@ def _correct_option_labels(snapshot: dict) -> set[str]:
 
 
 def _grade_single_choice(*, snapshot: dict, response: dict) -> bool:
-    return response.get("selected_option_label") in _correct_option_labels(snapshot)
+    selected = response.get("selected_option_label")
+    return isinstance(selected, str) and selected in _correct_option_labels(snapshot)
 
 
 def _grade_multiple_choice(*, snapshot: dict, response: dict) -> bool:
-    selected = set(response.get("selected_option_labels", []))
-    return selected == _correct_option_labels(snapshot)
+    selected = response.get("selected_option_labels", [])
+    if not isinstance(selected, list) or any(not isinstance(label, str) for label in selected):
+        return False
+    return set(selected) == _correct_option_labels(snapshot)
 
 
 def _grade_true_false(*, snapshot: dict, response: dict) -> bool:
-    return response.get("selected_option_label") in _correct_option_labels(snapshot)
+    selected = response.get("selected_option_label")
+    return isinstance(selected, str) and selected in _correct_option_labels(snapshot)
 
 
 def _grade_numeric(*, snapshot: dict, response: dict) -> bool:
@@ -41,11 +46,22 @@ def _grade_numeric(*, snapshot: dict, response: dict) -> bool:
     key = snapshot["options"][0]["content"]
     try:
         expected = Decimal(str(key["value"]))
-        given = Decimal(str(response.get("value")))
+        tolerance = Decimal(str(key.get("tolerance", 0)))
     except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
-        raise ScoringError(f"invalid numeric response or answer key: {exc}") from exc
-    tolerance = Decimal(str(key.get("tolerance", 0)))
-    return abs(given - expected) <= tolerance
+        raise ScoringError(f"invalid numeric answer key: {exc}") from exc
+    if not expected.is_finite() or not tolerance.is_finite() or tolerance < 0:
+        raise ScoringError("numeric answer key and tolerance must be finite; tolerance cannot be negative")
+
+    try:
+        given = Decimal(str(response.get("value")))
+    except (TypeError, ValueError, ArithmeticError):
+        return False
+    if not given.is_finite():
+        return False
+    try:
+        return abs(given - expected) <= tolerance
+    except InvalidOperation:
+        return False
 
 
 def _grade_matching(*, snapshot: dict, response: dict) -> bool:
@@ -54,7 +70,10 @@ def _grade_matching(*, snapshot: dict, response: dict) -> bool:
     if not snapshot["options"]:
         raise ScoringError("matching question has no configured answer key")
     expected = snapshot["options"][0]["content"].get("matches", {})
-    return response.get("matches", {}) == expected
+    if not isinstance(expected, dict):
+        raise ScoringError("matching answer key must be an object")
+    submitted = response.get("matches", {})
+    return isinstance(submitted, dict) and submitted == expected
 
 
 def _grade_ordering(*, snapshot: dict, response: dict) -> bool:
@@ -63,7 +82,10 @@ def _grade_ordering(*, snapshot: dict, response: dict) -> bool:
     if not snapshot["options"]:
         raise ScoringError("ordering question has no configured answer key")
     expected = snapshot["options"][0]["content"].get("sequence", [])
-    return response.get("sequence", []) == expected
+    if not isinstance(expected, list):
+        raise ScoringError("ordering answer key must be a list")
+    submitted = response.get("sequence", [])
+    return isinstance(submitted, list) and submitted == expected
 
 
 def _grade_hotspot(*, snapshot: dict, response: dict) -> bool:
@@ -74,16 +96,29 @@ def _grade_hotspot(*, snapshot: dict, response: dict) -> bool:
         raise ScoringError("hotspot question has no configured answer key")
     target = snapshot["options"][0]["content"]
     try:
-        dx = float(response.get("x", 0)) - float(target["x"])
-        dy = float(response.get("y", 0)) - float(target["y"])
+        target_x = float(target["x"])
+        target_y = float(target["y"])
+        tolerance = float(target.get("tolerance", 0))
     except (KeyError, TypeError, ValueError) as exc:
-        raise ScoringError(f"invalid hotspot response or target: {exc}") from exc
-    tolerance = float(target.get("tolerance", 0))
-    return (dx**2 + dy**2) ** 0.5 <= tolerance
+        raise ScoringError(f"invalid hotspot answer key: {exc}") from exc
+    if not all(math.isfinite(value) for value in (target_x, target_y, tolerance)) or tolerance < 0:
+        raise ScoringError("hotspot answer key coordinates and tolerance must be finite and tolerance non-negative")
+
+    try:
+        answer_x = float(response.get("x"))
+        answer_y = float(response.get("y"))
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(answer_x) or not math.isfinite(answer_y):
+        return False
+    dx = answer_x - target_x
+    dy = answer_y - target_y
+    return math.hypot(dx, dy) <= tolerance
 
 
 def _grade_image_selection(*, snapshot: dict, response: dict) -> bool:
-    return response.get("selected_option_label") in _correct_option_labels(snapshot)
+    selected = response.get("selected_option_label")
+    return isinstance(selected, str) and selected in _correct_option_labels(snapshot)
 
 
 _GRADERS = {
@@ -125,9 +160,9 @@ def grade_response(*, exam_question, response: dict) -> tuple[bool, Decimal]:
 
     # Empty/blank responses are unanswered, not wrong answers. This also
     # covers StudentAnswer rows created solely to flag a question. Check
-    # before calling the type-specific grader: numeric/matching graders
-    # correctly reject malformed attempted answers, but an empty response
-    # must remain an ordinary unanswered item.
+    # before calling the type-specific grader: malformed non-blank values
+    # are treated as incorrect answers, but an empty response must remain
+    # an ordinary unanswered item.
     has_response = any(
         value is not None
         and not (isinstance(value, str) and not value.strip())
