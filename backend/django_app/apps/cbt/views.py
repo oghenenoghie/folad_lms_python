@@ -5,8 +5,6 @@ question's content, not independently permissioned or listed) rather than
 top-level endpoints the way apps.examinations.QuestionOption is — see the
 CBT spec's own API section for why nesting is the right call here.
 """
-from decimal import Decimal, InvalidOperation
-
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -53,6 +51,7 @@ from .serializers import (
     QuestionOptionSerializer,
     QuestionSerializer,
     QuestionVersionSerializer,
+    StudentAnswerGradeSubmissionSerializer,
     StudentAnswerSerializer,
     TopicSerializer,
 )
@@ -1111,13 +1110,13 @@ class StudentAnswerGradeView(APIView):
 
     def post(self, request, public_id):
         answer = generics.get_object_or_404(StudentAnswer.objects, public_id=public_id)
-        try:
-            marks_awarded = Decimal(str(request.data["marks_awarded"]))
-        except (KeyError, InvalidOperation, TypeError):
-            return error_envelope("marks_awarded is required and must be a number", status=400)
+        serializer = StudentAnswerGradeSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         try:
             answer = attempt_service.grade_subjective_answer(
-                student_answer=answer, marks_awarded=marks_awarded, actor=request.user
+                student_answer=answer,
+                marks_awarded=serializer.validated_data["marks_awarded"],
+                actor=request.user,
             )
         except AttemptError as exc:
             return error_envelope(str(exc), status=400)
