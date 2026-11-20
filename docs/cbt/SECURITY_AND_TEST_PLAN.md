@@ -109,6 +109,20 @@ Objective scoring also treats malformed candidate answer values as incorrect res
 - Regrade/manual override is audited.
 - Final score uses immutable snapshot and accepted answers only.
 
+
+### M3-H candidate answer payload bounds
+
+The candidate answer endpoint accepts only JSON-object responses and applies resource limits before invoking the attempt service:
+
+- Maximum serialized response size: 16 KiB.
+- Maximum nesting depth: 8 levels.
+- Maximum value count: 512 nodes, counting object keys and values.
+- Maximum string or object-key length: 4,096 characters.
+- Non-finite numbers and values that cannot be serialized as strict JSON are rejected.
+- Rejected payloads return a validation error and must not create or update a StudentAnswer row.
+
+These limits are transport safeguards, not question-type validation; the scoring service still validates each objective answer shape against its frozen answer key.
+
 ## 7. Import and AI security tests
 
 - Allowlist MIME/type/extension and verify file signature.
