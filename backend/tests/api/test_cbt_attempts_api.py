@@ -588,7 +588,9 @@ def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("invalid_marks", ["NaN", "Infinity", "-Infinity", True, [], {}])
-def test_staff_grade_rejects_non_finite_or_non_numeric_marks(api_client, organization, user_factory, ready_exam, invalid_marks):
+def test_staff_grade_rejects_non_finite_or_non_numeric_marks(
+    api_client, organization, user_factory, ready_exam, invalid_marks
+):
     from apps.cbt.services.attempt_service import save_answer, start_attempt
 
     attempt = start_attempt(candidate=ready_exam["candidate"])
@@ -615,7 +617,9 @@ def test_staff_grade_rejects_non_finite_or_non_numeric_marks(api_client, organiz
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("invalid_payload", [{}, {"marks_awarded": "1.001"}, {"marks_awarded": "-0.01"}])
-def test_staff_grade_rejects_missing_negative_or_excess_precision(api_client, organization, user_factory, ready_exam, invalid_payload):
+def test_staff_grade_rejects_missing_negative_or_excess_precision(
+    api_client, organization, user_factory, ready_exam, invalid_payload
+):
     from apps.cbt.services.attempt_service import save_answer, start_attempt
 
     attempt = start_attempt(candidate=ready_exam["candidate"])
