@@ -55,7 +55,7 @@ Candidate answer and flag endpoints validate request payloads before resolving q
 - Staff manual grading parses `marks_awarded` through a bounded decimal serializer; missing values, booleans, non-numeric values, NaN/infinity, negative values and excess decimal precision are rejected before the grading service runs.
 - API regression coverage includes malformed/negative time, non-object responses, false flag values and invalid manual-grading numbers.
 
-These checks validate the transport contract; the attempt service remains responsible for domain invariants, deadline enforcement and locking.
+Objective scoring also treats malformed candidate answer values as incorrect responses (and applies the configured wrong-answer penalty when enabled) rather than allowing NaN/infinity or unexpected JSON shapes to raise runtime exceptions. Invalid frozen answer-key configuration remains a `ScoringError` so configuration defects are not silently scored as candidate mistakes. These checks validate the transport contract; the attempt service remains responsible for domain invariants, deadline enforcement and locking.
 
 ## 3. Authentication and authorization tests
 
