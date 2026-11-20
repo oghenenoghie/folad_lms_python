@@ -1,4 +1,5 @@
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import Permission, Role, RolePermission, UserRole
 from apps.staff.models import Staff
@@ -156,3 +157,70 @@ def test_teacher_profile_create_list_retrieve_delete(
 
     deleted = api_client.delete(f"/api/v1/teachers/{public_id}")
     assert deleted.status_code == 200
+
+
+@pytest.mark.django_db
+def test_staff_bulk_import_csv_creates_staff(api_client, organization, user_factory, school_factory):
+    school = school_factory(organization=organization, code="SBULK1")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "staff.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = (
+        "school_code,first_name,last_name,position,date_joined\n"
+        "SBULK1,Sam,Smith,Registrar,2020-01-01\n"
+        "SBULK1,Tara,Jones,Librarian,2021-06-15\n"
+    )
+    upload = SimpleUploadedFile("staff.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+    response = api_client.post("/api/v1/staff/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["created"] == 2
+    assert data["errors"] == []
+    assert Staff.all_tenants.filter(school=school).count() == 2
+
+
+@pytest.mark.django_db
+def test_staff_bulk_import_reports_bad_rows_without_aborting_the_batch(
+    api_client, organization, user_factory, school_factory,
+):
+    school_factory(organization=organization, code="SBULK2")
+    user = user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _grant(user, "staff.create")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = (
+        "school_code,first_name,last_name,position,date_joined\n"
+        "SBULK2,Good,Row,Teacher,2020-01-01\n"
+        "NOSUCHCODE,Bad,School,Teacher,2020-01-01\n"
+        "SBULK2,Missing,Position,,2020-01-01\n"
+    )
+    upload = SimpleUploadedFile("staff.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+    response = api_client.post("/api/v1/staff/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["created"] == 1
+    assert len(data["errors"]) == 2
+    assert data["errors"][0]["row"] == 3
+    assert "NOSUCHCODE" in data["errors"][0]["error"]
+    assert data["errors"][1]["row"] == 4
+    assert "position" in data["errors"][1]["error"]
+
+
+@pytest.mark.django_db
+def test_staff_bulk_import_requires_staff_create_permission(
+    api_client, organization, user_factory, school_factory,
+):
+    school_factory(organization=organization, code="SBULK3")
+    user_factory(organization=organization, email="a@example.com", password="s3cret-pass!")
+    _login(api_client, "a@example.com", "s3cret-pass!")
+
+    csv_content = "school_code,first_name,last_name,position,date_joined\nSBULK3,Sam,Smith,Registrar,2020-01-01\n"
+    upload = SimpleUploadedFile("staff.csv", csv_content.encode("utf-8"), content_type="text/csv")
+    response = api_client.post("/api/v1/staff/bulk-import", {"file": upload}, format="multipart")
+
+    assert response.status_code == 403
