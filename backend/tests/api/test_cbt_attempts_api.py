@@ -675,3 +675,22 @@ def test_candidate_answer_api_rejects_oversized_or_complex_response(
     from apps.cbt.models import StudentAnswer
 
     assert not StudentAnswer.objects.filter(attempt__public_id=attempt_public_id).exists()
+
+
+@pytest.mark.django_db
+def test_candidate_answer_api_accepts_collection_at_item_limit(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert started.status_code == 200, started.json()
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": {"items": list(range(100))}},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.json()

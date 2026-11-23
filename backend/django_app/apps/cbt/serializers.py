@@ -328,6 +328,10 @@ class AttemptAnswerSubmissionSerializer(serializers.Serializer):
     MAX_RESPONSE_DEPTH = 8
     MAX_RESPONSE_NODES = 512
     MAX_STRING_LENGTH = 4_096
+    # Per-container cap. Legitimate answers (selected option labels, ordering
+    # sequences, matching pairs) are bounded by a question's option count, so
+    # 100 is generous; without it a flat list can pass the node budget.
+    MAX_COLLECTION_ITEMS = 100
 
     exam_question = serializers.UUIDField()
     response = serializers.JSONField()
@@ -365,6 +369,10 @@ class AttemptAnswerSubmissionSerializer(serializers.Serializer):
                     raise serializers.ValidationError(
                         f"response strings must not exceed {self.MAX_STRING_LENGTH} characters"
                     )
+            elif isinstance(current, (dict, list)) and len(current) > self.MAX_COLLECTION_ITEMS:
+                raise serializers.ValidationError(
+                    f"response lists and objects must not contain more than {self.MAX_COLLECTION_ITEMS} items"
+                )
             elif isinstance(current, dict):
                 for key, child in current.items():
                     if not isinstance(key, str) or len(key) > self.MAX_STRING_LENGTH:
