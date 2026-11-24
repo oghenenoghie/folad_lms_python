@@ -117,6 +117,7 @@ The candidate answer endpoint accepts only JSON-object responses and applies res
 - Maximum serialized response size: 16 KiB.
 - Maximum nesting depth: 8 levels.
 - Maximum value count: 512 nodes, counting object keys and values.
+- Maximum items in any single list or object: 100.
 - Maximum string or object-key length: 4,096 characters.
 - Non-finite numbers and values that cannot be serialized as strict JSON are rejected.
 - Rejected payloads return a validation error and must not create or update a StudentAnswer row.
