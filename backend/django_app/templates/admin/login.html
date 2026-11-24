@@ -1,0 +1,22 @@
+{% extends "admin/login.html" %}
+{% comment %}
+    Extends django-unfold's admin/login.html (Django skips this file when
+    resolving a same-named {% extends %}, so this picks up the theme's
+    template from INSTALLED_APPS) and adds back the one field it drops:
+    the hidden `next` input that contrib.admin's own login.html renders.
+
+    AdminSite.login puts `next = reverse("admin:index")` into the context
+    whenever no ?next= was given. Without the field, opening /admin/login/
+    directly and signing in falls through to LOGIN_REDIRECT_URL (Django's
+    default /accounts/profile/, a 404 here) instead of the admin index.
+    With ?next=, `next` holds LoginView's already-validated redirect target,
+    so that case is unchanged.
+
+    Unfold's login_before/login_after blocks sit outside the <form>, so the
+    input joins it through the HTML `form` attribute rather than by nesting.
+{% endcomment %}
+
+{% block login_after %}
+    {{ block.super }}
+    <input type="hidden" name="next" value="{{ next }}" form="login-form">
+{% endblock %}
