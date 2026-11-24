@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "sms"
-    postgres_user: str = "sms"
-    postgres_password: str = "sms"
+    postgres_user: str = "sms_app"
+    postgres_password: str = "sms_app"
 
     redis_url: str = "redis://localhost:6379/0"
 
