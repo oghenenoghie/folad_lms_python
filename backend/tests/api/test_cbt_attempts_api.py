@@ -1,0 +1,696 @@
+"""apps.cbt Phase 4: the DRF API surface on top of attempt_service
+(backend/tests/api/test_cbt_attempts.py already covers that layer
+directly). Self-service endpoints (start/heartbeat/answers/flag/submit)
+are ownership-gated, never RBAC-gated — every student must always be able
+to act on their own attempt. Staff endpoints (list/detail/grade) are
+RBAC-gated and org-wide, with no ownership narrowing.
+"""
+from datetime import timedelta
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.accounts.models import Permission, Role, RolePermission, UserRole
+from apps.cbt.models import QuestionOption
+from apps.cbt.services.exam_service import add_candidate, add_question_to_exam, publish_exam
+from apps.cbt.services.question_service import approve_question, submit_question
+
+
+def _grant(user, *codes):
+    role = Role.objects.create(name=f"ROLE_{user.pk}_{'_'.join(codes)}"[:100], label="Test Role")
+    for code in codes:
+        RolePermission.objects.create(role=role, permission=Permission.objects.get(code=code))
+    UserRole.objects.create(user=user, role=role)
+
+
+def _login(api_client, email, password):
+    resp = api_client.post("/api/v1/auth/login", {"email": email, "password": password}, format="json")
+    token = resp.json()["data"]["access"]
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+
+def _single_choice_question(cbt_question_factory, fs, correct_label="B", marks="5.00"):
+    question = cbt_question_factory(
+        subject=fs["subject"], class_level=fs["class_level"], question_type="single_choice", marks=marks
+    )
+    QuestionOption.objects.create(
+        organization=question.organization, question=question, label="A", content={}, is_correct=(correct_label == "A"), order=1
+    )
+    QuestionOption.objects.create(
+        organization=question.organization, question=question, label="B", content={}, is_correct=(correct_label == "B"), order=2
+    )
+    submit_question(question=question, actor=None)
+    approve_question(question=question, actor=None)
+    return question
+
+
+@pytest.fixture
+def ready_exam(
+    cbt_exam_fixture_set, cbt_question_factory, student_factory, staff_factory, teacher_factory,
+    class_subject_factory, enrollment_factory, organization, user_factory,
+):
+    """A published exam, one single_choice question (B is correct, 5
+    marks), one eligible candidate — a student user attached to that
+    candidate so the self-service API can log in as them — plus a second,
+    unrelated student to prove ownership scoping.
+    """
+    fs = cbt_exam_fixture_set
+    exam = fs["exam"]
+    exam.start_at = timezone.now() - timedelta(minutes=5)
+    exam.end_at = timezone.now() + timedelta(hours=1)
+    exam.duration_minutes = 30
+    exam.pass_mark = Decimal("60.00")
+    exam.save(update_fields=["start_at", "end_at", "duration_minutes", "pass_mark"])
+
+    question = _single_choice_question(cbt_question_factory, fs)
+    add_question_to_exam(exam=exam, question=question)
+
+    student_user = user_factory(organization=organization, email="candidate@example.com", password="s3cret-pass!")
+    student = student_factory(school=fs["school"], user=student_user)
+    enrollment_factory(student=student, class_arm=fs["class_arm"], academic_year=fs["academic_year"])
+    teacher = teacher_factory(staff=staff_factory(school=fs["school"]))
+    class_subject_factory(class_arm=fs["class_arm"], subject=fs["subject"], teacher=teacher)
+    candidate = add_candidate(exam=exam, student=student)
+
+    other_user = user_factory(organization=organization, email="other@example.com", password="s3cret-pass!")
+    other_student = student_factory(
+        school=fs["school"], admission_number="A002", first_name="Other", user=other_user
+    )
+
+    published = publish_exam(exam=exam, actor=None)
+    return {
+        **fs,
+        "exam": published,
+        "question": question,
+        "student": student,
+        "candidate": candidate,
+        "other_student": other_student,
+    }
+
+
+@pytest.mark.django_db
+def test_student_can_start_answer_and_submit_own_attempt_via_api(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert started.status_code == 200, started.json()
+    body = started.json()["data"]
+    assert body["attempt"]["status"] == "in_progress"
+    assert len(body["questions"]) == 1
+    delivered = body["questions"][0]
+    assert delivered["exam_question"] == str(exam_question.public_id)
+    # The candidate must never see which option is correct mid-attempt.
+    for option in delivered["snapshot"]["options"]:
+        assert "is_correct" not in option
+    attempt_public_id = body["attempt"]["public_id"]
+
+    heartbeat = api_client.post(f"/api/v1/cbt/my/attempts/{attempt_public_id}/heartbeat")
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["data"]["attempt"]["status"] == "in_progress"
+
+    answered = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": {"selected_option_label": "B"}},
+        format="json",
+    )
+    assert answered.status_code == 200, answered.json()
+    assert answered.json()["data"]["response"] == {"selected_option_label": "B"}
+
+    flagged = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/flag",
+        {"exam_question": str(exam_question.public_id), "flagged": True},
+        format="json",
+    )
+    assert flagged.status_code == 200
+    assert flagged.json()["data"]["flagged"] is True
+
+    submitted = api_client.post(f"/api/v1/cbt/my/attempts/{attempt_public_id}/submit")
+    assert submitted.status_code == 200, submitted.json()
+    submitted_attempt = submitted.json()["data"]["attempt"]
+    assert submitted_attempt["status"] == "submitted"
+    assert submitted_attempt["score"] == "5.00"
+    assert submitted_attempt["passed"] is True
+
+    detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt_public_id}")
+    assert detail.status_code == 200
+    assert detail.json()["data"]["attempt"]["status"] == "submitted"
+
+
+@pytest.mark.django_db
+def test_student_cannot_start_or_view_another_students_attempt(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    _login(api_client, "other@example.com", "s3cret-pass!")
+
+    denied_start = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert denied_start.status_code == 404
+
+    from apps.cbt.services.attempt_service import start_attempt
+
+    attempt = start_attempt(candidate=candidate)
+    denied_detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt.public_id}")
+    assert denied_detail.status_code == 404
+
+    denied_submit = api_client.post(f"/api/v1/cbt/my/attempts/{attempt.public_id}/submit")
+    assert denied_submit.status_code == 404
+
+
+@pytest.mark.django_db
+def test_self_service_endpoints_require_a_student_profile(api_client, organization, user_factory, ready_exam):
+    candidate = ready_exam["candidate"]
+    staff_user = user_factory(organization=organization, email="staffonly@example.com", password="s3cret-pass!")
+    _login(api_client, "staffonly@example.com", "s3cret-pass!")
+
+    resp = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_staff_list_and_detail_require_permission_and_see_every_attempt(api_client, organization, user_factory, ready_exam):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt, submit_attempt
+
+    exam = ready_exam["exam"]
+    candidate = ready_exam["candidate"]
+    exam_question = exam.exam_questions.get()
+    attempt = start_attempt(candidate=candidate)
+    save_answer(attempt=attempt, exam_question=exam_question, response={"selected_option_label": "B"})
+    submit_attempt(attempt=attempt, actor=None)
+
+    norole = user_factory(organization=organization, email="norole@example.com", password="s3cret-pass!")
+    _login(api_client, "norole@example.com", "s3cret-pass!")
+    denied = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts")
+    assert denied.status_code == 403
+
+    staff = user_factory(organization=organization, email="staff2@example.com", password="s3cret-pass!")
+    _grant(staff, "cbt_attempts.view")
+    _login(api_client, "staff2@example.com", "s3cret-pass!")
+
+    listed = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts")
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 1
+
+    detail = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts/{attempt.public_id}")
+    assert detail.status_code == 200
+    assert detail.json()["data"]["attempt"]["status"] == "submitted"
+    assert len(detail.json()["data"]["answers"]) == 1
+
+
+@pytest.mark.django_db
+def test_staff_grade_requires_permission_and_finalizes_result(
+    api_client, organization, user_factory, cbt_exam_fixture_set, cbt_question_factory,
+    student_factory, staff_factory, teacher_factory, class_subject_factory, enrollment_factory,
+):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt, submit_attempt
+    from apps.examinations.models import Result
+
+    fs = cbt_exam_fixture_set
+    exam = fs["exam"]
+    exam.start_at = timezone.now() - timedelta(minutes=5)
+    exam.end_at = timezone.now() + timedelta(hours=1)
+    exam.save(update_fields=["start_at", "end_at"])
+
+    mc = _single_choice_question(cbt_question_factory, fs)
+    add_question_to_exam(exam=exam, question=mc)
+    subjective = cbt_question_factory(
+        subject=fs["subject"], class_level=fs["class_level"], question_type="short_answer", marks="5.00"
+    )
+    submit_question(question=subjective, actor=None)
+    approve_question(question=subjective, actor=None)
+    subjective_eq = add_question_to_exam(exam=exam, question=subjective)
+
+    student = student_factory(school=fs["school"])
+    enrollment_factory(student=student, class_arm=fs["class_arm"], academic_year=fs["academic_year"])
+    teacher = teacher_factory(staff=staff_factory(school=fs["school"]))
+    class_subject_factory(class_arm=fs["class_arm"], subject=fs["subject"], teacher=teacher)
+    candidate = add_candidate(exam=exam, student=student)
+    exam = publish_exam(exam=exam, actor=None)
+
+    attempt = start_attempt(candidate=candidate)
+    mc_eq = exam.exam_questions.get(question=mc)
+    save_answer(attempt=attempt, exam_question=mc_eq, response={"selected_option_label": "B"})
+    save_answer(attempt=attempt, exam_question=subjective_eq, response={"text": "an essay answer"})
+    attempt = submit_attempt(attempt=attempt, actor=None)
+    assert attempt.status == "submitted"
+    assert not Result.objects.filter(student=student).exists()
+
+    subjective_answer = attempt.answers.get(exam_question=subjective_eq)
+
+    norole = user_factory(organization=organization, email="norole2@example.com", password="s3cret-pass!")
+    _login(api_client, "norole2@example.com", "s3cret-pass!")
+    denied = api_client.post(
+        f"/api/v1/cbt/answers/{subjective_answer.public_id}/grade", {"marks_awarded": "5.00"}, format="json"
+    )
+    assert denied.status_code == 403
+
+    grader = user_factory(organization=organization, email="grader@example.com", password="s3cret-pass!")
+    _grant(grader, "cbt_attempts.grade")
+    _login(api_client, "grader@example.com", "s3cret-pass!")
+
+    graded = api_client.post(
+        f"/api/v1/cbt/answers/{subjective_answer.public_id}/grade", {"marks_awarded": "5.00"}, format="json"
+    )
+    assert graded.status_code == 200, graded.json()
+    assert graded.json()["data"]["marks_awarded"] == "5.00"
+
+    result = Result.objects.get(student=student)
+    assert result.score == Decimal("10.00")
+
+
+@pytest.mark.django_db
+def test_student_can_log_events_via_api_and_it_auto_flags_after_threshold(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import AUTO_FLAG_THRESHOLD
+
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    for _ in range(AUTO_FLAG_THRESHOLD):
+        resp = api_client.post(
+            f"/api/v1/cbt/my/attempts/{attempt_public_id}/events",
+            {"event_type": "fullscreen_exit", "metadata": {"reason": "test"}},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.json()
+
+    detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt_public_id}")
+    assert detail.json()["data"]["attempt"]["flagged_for_review"] is True
+
+
+@pytest.mark.django_db
+def test_cannot_log_an_event_on_another_students_attempt(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    attempt = start_attempt(candidate=candidate)
+    _login(api_client, "other@example.com", "s3cret-pass!")
+
+    resp = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/events",
+        {"event_type": "tab_hidden"},
+        format="json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_invalid_event_type_is_rejected(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    resp = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/events",
+        {"event_type": "not_a_real_event"},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_staff_detail_includes_events(api_client, organization, user_factory, ready_exam):
+    from apps.cbt.services.attempt_service import log_attempt_event, start_attempt
+
+    exam = ready_exam["exam"]
+    candidate = ready_exam["candidate"]
+    attempt = start_attempt(candidate=candidate)
+    log_attempt_event(attempt=attempt, event_type="tab_hidden")
+
+    staff = user_factory(organization=organization, email="staff3@example.com", password="s3cret-pass!")
+    _grant(staff, "cbt_attempts.view")
+    _login(api_client, "staff3@example.com", "s3cret-pass!")
+
+    detail = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts/{attempt.public_id}")
+    assert detail.status_code == 200
+    events = detail.json()["data"]["events"]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "tab_hidden"
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_shows_own_candidacy_with_exam_summary_and_no_attempt_yet(api_client, ready_exam):
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200, resp.json()
+    results = resp.json()["data"]["results"]
+    assert len(results) == 1
+
+    row = results[0]
+    assert row["public_id"] == str(ready_exam["candidate"].public_id)
+    assert row["exam"]["public_id"] == str(ready_exam["exam"].public_id)
+    assert row["exam"]["name"] == ready_exam["exam"].name
+    assert row["exam"]["subject"] == ready_exam["subject"].name
+    assert row["attempt"] is None
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_includes_attempt_once_started(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    start_attempt(candidate=ready_exam["candidate"])
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    row = resp.json()["data"]["results"][0]
+    assert row["attempt"] is not None
+    assert row["attempt"]["status"] == "in_progress"
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_never_shows_another_students_candidacy(api_client, ready_exam):
+    _login(api_client, "other@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_my_candidate_list_returns_empty_for_a_non_student_account(api_client, organization, user_factory, ready_exam):
+    staff = user_factory(organization=organization, email="staffonly2@example.com", password="s3cret-pass!")
+    _login(api_client, "staffonly2@example.com", "s3cret-pass!")
+
+    resp = api_client.get("/api/v1/cbt/my/candidates")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_student_late_submit_via_api_is_recorded_as_expired(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+    attempt.expires_at = timezone.now() - timedelta(seconds=1)
+    attempt.save(update_fields=["expires_at"])
+
+    response = api_client.post(f"/api/v1/cbt/my/attempts/{attempt.public_id}/submit")
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["data"]["attempt"]["status"] == "expired"
+
+
+@pytest.mark.django_db
+def test_stale_heartbeat_cannot_overwrite_a_completed_submission(ready_exam):
+    from apps.cbt.services.attempt_service import heartbeat, start_attempt, submit_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    stale_instance = attempt
+    submitted = submit_attempt(attempt=attempt, actor=None)
+
+    checked = heartbeat(attempt=stale_instance)
+
+    assert submitted.status == "submitted"
+    assert checked.status == "submitted"
+
+
+@pytest.mark.django_db
+def test_answer_endpoint_rejects_invalid_time_spent_and_non_object_response(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    invalid_time = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {
+            "exam_question": str(exam_question.public_id),
+            "response": {"selected_option_label": "B"},
+            "time_spent_seconds": "not-a-number",
+        },
+        format="json",
+    )
+    assert invalid_time.status_code == 400
+
+    invalid_response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": ["not", "an", "object"]},
+        format="json",
+    )
+    assert invalid_response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_flag_endpoint_parses_false_as_false_not_truthy_string(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/flag",
+        {"exam_question": str(exam_question.public_id), "flagged": "false"},
+        format="json",
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["data"]["flagged"] is False
+
+
+@pytest.mark.django_db
+def test_answer_endpoint_rejects_negative_time_spent(api_client, ready_exam):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+    attempt = start_attempt(candidate=candidate)
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt.public_id}/answers",
+        {
+            "exam_question": str(exam_question.public_id),
+            "response": {"selected_option_label": "B"},
+            "time_spent_seconds": -1,
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+
+@pytest.mark.django_db
+def test_candidate_cannot_access_attempt_from_another_tenant(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    user_factory(
+        organization=other_organization,
+        email="other-tenant-student@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "other-tenant-student@example.com", "s3cret-pass!")
+
+    detail = api_client.get(f"/api/v1/cbt/my/attempts/{attempt.public_id}")
+    submit = api_client.post(f"/api/v1/cbt/my/attempts/{attempt.public_id}/submit")
+    candidates = api_client.get("/api/v1/cbt/my/candidates")
+
+    assert detail.status_code == 404
+    assert submit.status_code == 404
+    assert candidates.status_code == 200
+    assert candidates.json()["data"]["results"] == []
+
+
+@pytest.mark.django_db
+def test_staff_cannot_list_or_review_attempts_from_another_tenant(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import start_attempt
+
+    exam = ready_exam["exam"]
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    other_tenant_staff = user_factory(
+        organization=other_organization,
+        email="other-tenant-staff@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "other-tenant-staff@example.com", "s3cret-pass!")
+    _grant(other_tenant_staff, "cbt_attempts.view")
+
+    listed = api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/attempts")
+    detail = api_client.get(
+        f"/api/v1/cbt/exams/{exam.public_id}/attempts/{attempt.public_id}"
+    )
+
+    assert listed.status_code == 200
+    assert listed.json()["data"]["pagination"]["total_count"] == 0
+    assert detail.status_code == 404
+
+@pytest.mark.django_db
+def test_staff_from_another_tenant_cannot_grade_an_answer(
+    api_client, ready_exam, other_organization, user_factory
+):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    other_tenant_grader = user_factory(
+        organization=other_organization,
+        email="cross-tenant-grader@example.com",
+        password="s3cret-pass!",
+    )
+    _grant(other_tenant_grader, "cbt_attempts.grade")
+    _login(api_client, "cross-tenant-grader@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        {"marks_awarded": "1.00"},
+        format="json",
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_staff_read_endpoints_hide_another_tenants_exam_and_question(
+    api_client, ready_exam, other_organization, user_factory
+):
+    """Every staff-facing exam/question read path must respect the JWT tenant."""
+    exam = ready_exam["exam"]
+    question = ready_exam["question"]
+    other_tenant_staff = user_factory(
+        organization=other_organization,
+        email="cross-tenant-exam-reviewer@example.com",
+        password="s3cret-pass!",
+    )
+    _login(api_client, "cross-tenant-exam-reviewer@example.com", "s3cret-pass!")
+    _grant(other_tenant_staff, "cbt_exams.view", "cbt_questions.view", "cbt_attempts.view")
+
+    responses = {
+        "exam_detail": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}"),
+        "exam_analytics": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/analytics"),
+        "exam_live_status": api_client.get(f"/api/v1/cbt/exams/{exam.public_id}/live"),
+        "question_detail": api_client.get(f"/api/v1/cbt/questions/{question.public_id}"),
+    }
+
+    assert {name: response.status_code for name, response in responses.items()} == {
+        "exam_detail": 404,
+        "exam_analytics": 404,
+        "exam_live_status": 404,
+        "question_detail": 404,
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid_marks", ["NaN", "Infinity", "-Infinity", True, [], {}])
+def test_staff_grade_rejects_non_finite_or_non_numeric_marks(
+    api_client, organization, user_factory, ready_exam, invalid_marks
+):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    grader = user_factory(organization=organization, email="grade-input-check@example.com", password="s3cret-pass!")
+    _grant(grader, "cbt_attempts.grade")
+    _login(api_client, "grade-input-check@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        {"marks_awarded": invalid_marks},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.json()
+    answer.refresh_from_db()
+    assert answer.graded_at is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid_payload", [{}, {"marks_awarded": "1.001"}, {"marks_awarded": "-0.01"}])
+def test_staff_grade_rejects_missing_negative_or_excess_precision(
+    api_client, organization, user_factory, ready_exam, invalid_payload
+):
+    from apps.cbt.services.attempt_service import save_answer, start_attempt
+
+    attempt = start_attempt(candidate=ready_exam["candidate"])
+    exam_question = ready_exam["exam"].exam_questions.get()
+    answer = save_answer(
+        attempt=attempt,
+        exam_question=exam_question,
+        response={"selected_option_label": "B"},
+    )
+    grader = user_factory(organization=organization, email="grade-input-boundary@example.com", password="s3cret-pass!")
+    _grant(grader, "cbt_attempts.grade")
+    _login(api_client, "grade-input-boundary@example.com", "s3cret-pass!")
+
+    response = api_client.post(
+        f"/api/v1/cbt/answers/{answer.public_id}/grade",
+        invalid_payload,
+        format="json",
+    )
+
+    assert response.status_code == 400, response.json()
+    answer.refresh_from_db()
+    assert answer.graded_at is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "candidate_response",
+    [
+        {"text": "x" * 16_500},
+        {"nested": {"a": {"b": {"c": {"d": {"e": {"f": {"g": {"h": {"i": "too deep"}}}}}}}}}},
+        {"items": list(range(300))},
+        {"text": "x" * 4_100},
+    ],
+)
+def test_candidate_answer_api_rejects_oversized_or_complex_response(
+    api_client, ready_exam, candidate_response
+):
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert started.status_code == 200, started.json()
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": candidate_response},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.json()
+    from apps.cbt.models import StudentAnswer
+
+    assert not StudentAnswer.objects.filter(attempt__public_id=attempt_public_id).exists()
+
+
+@pytest.mark.django_db
+def test_candidate_answer_api_accepts_collection_at_item_limit(api_client, ready_exam):
+    candidate = ready_exam["candidate"]
+    exam_question = ready_exam["exam"].exam_questions.get()
+    _login(api_client, "candidate@example.com", "s3cret-pass!")
+
+    started = api_client.post(f"/api/v1/cbt/my/candidates/{candidate.public_id}/start-attempt")
+    assert started.status_code == 200, started.json()
+    attempt_public_id = started.json()["data"]["attempt"]["public_id"]
+
+    response = api_client.post(
+        f"/api/v1/cbt/my/attempts/{attempt_public_id}/answers",
+        {"exam_question": str(exam_question.public_id), "response": {"items": list(range(100))}},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.json()

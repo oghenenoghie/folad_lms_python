@@ -1,7 +1,7 @@
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models
 
-from apps.core.models import BaseModel, TimestampedModel
+from apps.core.models import BaseModel, TimestampedModel, UUIDPublicIdModel
 from apps.tenancy.managers import TenantManager
 
 from .managers import UserManager
@@ -47,6 +47,26 @@ class User(AbstractBaseUser, BaseModel):
     def __str__(self) -> str:
         return self.email
 
+    # Django Admin (contrib.admin) calls these directly on the user object
+    # (has_module_permission() -> request.user.has_module_perms(...), etc.),
+    # and they don't exist unless a model inherits PermissionsMixin — which
+    # this model deliberately doesn't, since that would pull in Django's
+    # own Group/Permission tables alongside this app's own RBAC (Role,
+    # Permission, UserRole — see apps/accounts/permissions.py), duplicating
+    # the permission system for no benefit. Django Admin here is the
+    # platform ops console (§11 ARCHITECTURE.md), not the general app UI —
+    # every other role's authorization goes through the API's RBAC
+    # (require_permission()), so it's correct for Admin access to be
+    # is_superuser-gated only.
+    def has_perm(self, perm, obj=None) -> bool:
+        return self.is_active and self.is_superuser
+
+    def has_perms(self, perm_list, obj=None) -> bool:
+        return self.is_active and self.is_superuser
+
+    def has_module_perms(self, app_label) -> bool:
+        return self.is_active and self.is_superuser
+
 
 class Permission(models.Model):
     """A `module.action` grant, e.g. `students.view` (§8 ARCHITECTURE.md)."""
@@ -64,10 +84,13 @@ class Permission(models.Model):
         return self.code
 
 
-class Role(models.Model):
+class Role(UUIDPublicIdModel):
     """A named bundle of permissions. `is_system` roles ship with the
     platform; non-system roles are the CUSTOM_ROLE composition a school
-    can build for itself (§8 ARCHITECTURE.md)."""
+    can build for itself (§8 ARCHITECTURE.md). Carries `public_id` (unlike
+    Permission/RolePermission/UserRole) because it's the one RBAC entity
+    addressed directly by the Users & Roles admin API — the only external
+    identifier this codebase ever exposes (see core/models.py)."""
 
     name = models.CharField(max_length=100, unique=True)
     label = models.CharField(max_length=150)

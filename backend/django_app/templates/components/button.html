@@ -1,0 +1,22 @@
+{% load ui_tags %}
+{% if href %}
+<a href="{{ href }}"
+   class="{% if variant == 'primary' %}btn-primary{% elif variant == 'danger' %}btn-danger{% elif variant == 'ghost' %}btn-ghost{% else %}btn-secondary{% endif %}"
+   {% if hx_get %}hx-get="{{ hx_get }}"{% endif %}
+   {% if hx_target %}hx-target="{{ hx_target }}"{% endif %}
+   {% if hx_confirm %}hx-confirm="{{ hx_confirm }}"{% endif %}>
+  {% if icon %}{% ui_icon icon "h-4 w-4" %}{% endif %}
+  <span>{{ label }}</span>
+</a>
+{% else %}
+<button type="{{ type }}"
+        class="{% if variant == 'primary' %}btn-primary{% elif variant == 'danger' %}btn-danger{% elif variant == 'ghost' %}btn-ghost{% else %}btn-secondary{% endif %}"
+        {% if disabled %}disabled{% endif %}
+        {% if hx_get %}hx-get="{{ hx_get }}"{% endif %}
+        {% if hx_post %}hx-post="{{ hx_post }}"{% endif %}
+        {% if hx_target %}hx-target="{{ hx_target }}"{% endif %}
+        {% if hx_confirm %}hx-confirm="{{ hx_confirm }}"{% endif %}>
+  {% if icon %}{% ui_icon icon "h-4 w-4" %}{% endif %}
+  <span>{{ label }}</span>
+</button>
+{% endif %}

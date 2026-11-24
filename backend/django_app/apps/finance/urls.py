@@ -1,0 +1,51 @@
+from django.urls import path
+
+from .views import (
+    DiscountDetailView,
+    DiscountListCreateView,
+    FeeItemDetailView,
+    FeeItemListCreateView,
+    FeeStructureDetailView,
+    FeeStructureListCreateView,
+    InvoiceCancelView,
+    InvoiceDetailView,
+    InvoiceIssueView,
+    InvoiceLineDetailView,
+    InvoiceLineListCreateView,
+    InvoiceListCreateView,
+    LedgerEntryListView,
+    PaymentDetailView,
+    PaymentListCreateView,
+    ReceiptDetailView,
+    ReceiptListView,
+    RefundDetailView,
+    RefundListCreateView,
+    ScholarshipDetailView,
+    ScholarshipListCreateView,
+)
+
+urlpatterns = [
+    path("fee-structures", FeeStructureListCreateView.as_view(), name="fee-structure-list-create"),
+    path(
+        "fee-structures/<uuid:public_id>", FeeStructureDetailView.as_view(), name="fee-structure-detail"
+    ),
+    path("fee-items", FeeItemListCreateView.as_view(), name="fee-item-list-create"),
+    path("fee-items/<uuid:public_id>", FeeItemDetailView.as_view(), name="fee-item-detail"),
+    path("discounts", DiscountListCreateView.as_view(), name="discount-list-create"),
+    path("discounts/<uuid:public_id>", DiscountDetailView.as_view(), name="discount-detail"),
+    path("scholarships", ScholarshipListCreateView.as_view(), name="scholarship-list-create"),
+    path("scholarships/<uuid:public_id>", ScholarshipDetailView.as_view(), name="scholarship-detail"),
+    path("invoices", InvoiceListCreateView.as_view(), name="invoice-list-create"),
+    path("invoices/<uuid:public_id>", InvoiceDetailView.as_view(), name="invoice-detail"),
+    path("invoices/<uuid:public_id>/issue", InvoiceIssueView.as_view(), name="invoice-issue"),
+    path("invoices/<uuid:public_id>/cancel", InvoiceCancelView.as_view(), name="invoice-cancel"),
+    path("invoice-lines", InvoiceLineListCreateView.as_view(), name="invoice-line-list-create"),
+    path("invoice-lines/<uuid:public_id>", InvoiceLineDetailView.as_view(), name="invoice-line-detail"),
+    path("payments", PaymentListCreateView.as_view(), name="payment-list-create"),
+    path("payments/<uuid:public_id>", PaymentDetailView.as_view(), name="payment-detail"),
+    path("refunds", RefundListCreateView.as_view(), name="refund-list-create"),
+    path("refunds/<uuid:public_id>", RefundDetailView.as_view(), name="refund-detail"),
+    path("receipts", ReceiptListView.as_view(), name="receipt-list"),
+    path("receipts/<uuid:public_id>", ReceiptDetailView.as_view(), name="receipt-detail"),
+    path("ledger-entries", LedgerEntryListView.as_view(), name="ledger-entry-list"),
+]

@@ -1,4 +1,4 @@
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import generics
 
 from .pagination import EnvelopePageNumberPagination
@@ -23,9 +23,15 @@ class EnvelopeCreateMixin:
         # unlike the legacy Meta.unique_together — DRF's ModelSerializer does
         # NOT auto-translate into a pre-save validator. Without this, a
         # uniqueness conflict would surface as a raw, unhandled IntegrityError
-        # (500) instead of a clean 409.
+        # (500) instead of a clean 409. The inner atomic() is required, not
+        # cosmetic: catching IntegrityError without first isolating the write
+        # in its own savepoint leaves the *surrounding* transaction (pytest's
+        # per-test transaction, or any future caller-level atomic() block)
+        # poisoned for every query after this one, even though the exception
+        # itself was caught.
         try:
-            self.perform_create(serializer)
+            with transaction.atomic():
+                self.perform_create(serializer)
         except IntegrityError:
             return error_envelope("a record with these values already exists", status=409)
         return envelope(serializer.data, message="created successfully", status=201)
@@ -41,8 +47,10 @@ class EnvelopeUpdateMixin:
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        # See the atomic() note in EnvelopeCreateMixin.create() above.
         try:
-            self.perform_update(serializer)
+            with transaction.atomic():
+                self.perform_update(serializer)
         except IntegrityError:
             return error_envelope("a record with these values already exists", status=409)
         return envelope(serializer.data, message="updated successfully")
@@ -78,3 +86,24 @@ class TenantRetrieveUpdateDestroyAPIView(
 
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)
+
+
+class TenantListAPIView(EnvelopeListMixin, generics.GenericAPIView):
+    """Read-only list — for a resource with no client-facing create/update/
+    delete, e.g. a system-generated audit trail (apps.attendance's
+    AttendanceAudit)."""
+
+    pagination_class = EnvelopePageNumberPagination
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+
+class TenantRetrieveAPIView(EnvelopeRetrieveMixin, generics.GenericAPIView):
+    """Read-only detail — see TenantListAPIView."""
+
+    lookup_field = "public_id"
+    lookup_url_kwarg = "public_id"
+
+    def get(self, request, *args, **kwargs):
+        return self.retrieve(request, *args, **kwargs)

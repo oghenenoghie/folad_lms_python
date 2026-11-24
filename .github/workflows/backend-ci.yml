@@ -1,0 +1,95 @@
+name: Backend PostgreSQL CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  django-postgres:
+    name: Django tests (PostgreSQL 16 + Redis 7, RLS-enabled role)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test_sms
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d test_sms"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://folad_ci:folad_ci_password@127.0.0.1:5432/test_sms
+      # FastAPI edge settings use POSTGRES_* rather than Django's DATABASE_URL.
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: test_sms
+      POSTGRES_USER: folad_ci
+      POSTGRES_PASSWORD: folad_ci_password
+      DB_SSL_REQUIRE: 'false'
+      REDIS_URL: redis://127.0.0.1:6379/0
+      DJANGO_SECRET_KEY: ci-only-not-a-production-secret
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      STORAGE_BACKEND: local
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked backend dependencies
+        run: uv sync --extra dev --frozen
+      - name: Create a non-superuser database role for RLS tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE folad_ci LOGIN PASSWORD 'folad_ci_password' CREATEDB;
+          ALTER DATABASE test_sms OWNER TO folad_ci;
+          GRANT ALL PRIVILEGES ON DATABASE test_sms TO folad_ci;
+          SQL
+      - name: Check Django configuration
+        run: uv run python django_app/manage.py check
+      - name: Check migration drift
+        run: uv run python django_app/manage.py makemigrations --check --dry-run
+      - name: Lint backend and CBT tests
+        run: uv run ruff check django_app/apps/cbt tests/api/test_cbt_attempts.py
+      - name: Run backend test suite
+        run: uv run pytest -q

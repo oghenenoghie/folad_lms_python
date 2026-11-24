@@ -1,6 +1,12 @@
 import os
+import sys
+from pathlib import Path
 
-from celery import Celery
+# See the matching comment in manage.py: makes `import shared` (backend/shared/)
+# resolve for a local (non-Docker) `celery -A config worker` too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from celery import Celery  # noqa: E402
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
 

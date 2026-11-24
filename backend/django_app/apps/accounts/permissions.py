@@ -47,3 +47,19 @@ def require_permission(code: str) -> type[HasPermission]:
     `permission_classes = [require_permission("students.view")]`.
     """
     return type(f"RequirePermission_{code.replace('.', '_')}", (HasPermission,), {"code": code})
+
+
+class IsSuperUser(BasePermission):
+    """Gate for the Users & Roles admin API (apps.accounts.admin_views) —
+    deliberately *not* `require_permission(...)`. That system grants
+    permissions through Role/RolePermission, which this API itself edits;
+    gating role/permission management on a permission a role could grant
+    itself would let any org admin escalate their own access. Same
+    is_superuser-only boundary User.has_perm() already documents for
+    Django Admin (see apps.accounts.models.User) — this just gives
+    superusers a JSON API/frontend option instead of only Django Admin.
+    """
+
+    def has_permission(self, request, view) -> bool:
+        user = request.user
+        return bool(user and getattr(user, "is_authenticated", False) and user.is_superuser)

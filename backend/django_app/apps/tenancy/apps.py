@@ -15,6 +15,9 @@ class TenancyConfig(AppConfig):
             if connection.vendor != "postgresql":
                 return
             with connection.cursor() as cursor:
-                cursor.execute("SELECT set_config('app.current_org', '0', false)")
+                cursor.execute(
+                    "SELECT set_config('app.current_org', '0', false), "
+                    "set_config('app.platform_mode', 'false', false)"
+                )
 
         connection_created.connect(_reset_rls_guc_on_new_connection, dispatch_uid="tenancy_reset_rls_guc")

@@ -1,0 +1,113 @@
+{% extends "layouts/app.html" %}
+{% load static ui_tags %}
+{% block title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="{% static 'vendor/chart.umd.min.js' %}"></script>
+{% endblock %}
+
+{% block breadcrumbs %}
+{% ui_breadcrumbs breadcrumb_items %}
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-6xl space-y-6 p-6">
+  <div>
+    <h1 class="text-xl font-semibold">Dashboard</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+      {% if request.user.organization %}{{ request.user.organization.name }}{% else %}No organization on this account{% endif %}
+    </p>
+  </div>
+
+  {% if not request.user.organization %}
+    {% ui_alert message="This account isn't attached to an organization, so there's nothing tenant-scoped to show here." variant="warning" title="Platform-level account" %}
+  {% elif not has_any_dashboard_access %}
+    {% ui_empty_state title="No dashboard access yet" description="Your account isn't granted any module permissions yet. Ask an administrator to assign you a role." icon="shield" %}
+  {% else %}
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {% if can_view_students %}
+    {% ui_card title="Students" %}
+      <p class="text-3xl font-semibold">{{ student_count }}</p>
+    {% end_ui_card %}
+    {% endif %}
+    {% if can_view_staff %}
+    {% ui_card title="Staff" %}
+      <p class="text-3xl font-semibold">{{ staff_count }}</p>
+    {% end_ui_card %}
+    {% endif %}
+    {% if can_view_teachers %}
+    {% ui_card title="Teachers" %}
+      <p class="text-3xl font-semibold">{{ teacher_count }}</p>
+    {% end_ui_card %}
+    {% endif %}
+    {% if can_view_guardians %}
+    {% ui_card title="Guardians" %}
+      <p class="text-3xl font-semibold">{{ guardian_count }}</p>
+    {% end_ui_card %}
+    {% endif %}
+  </div>
+
+  {% if can_view_students %}
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    {% ui_card title="Students by enrollment status" %}
+      {% if enrollment_breakdown %}
+        {{ enrollment_breakdown|json_script:"enrollment-data" }}
+        <canvas id="enrollment-chart" height="220"></canvas>
+      {% else %}
+        {% ui_empty_state title="No students yet" description="Once students are enrolled, their status breakdown shows up here." icon="graduation-cap" %}
+      {% endif %}
+    {% end_ui_card %}
+
+    {% ui_card title="Recently added students" %}
+      {% if recent_students %}
+        <div class="table-wrap">
+          <table class="table-base">
+            <thead>
+              <tr><th>Name</th><th>Admission #</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for student in recent_students %}
+              <tr>
+                <td>{{ student.first_name }} {{ student.last_name }}</td>
+                <td>{{ student.admission_number }}</td>
+                <td>
+                  {% if student.enrollment_status == "active" %}{% ui_badge label=student.get_enrollment_status_display color="green" %}
+                  {% elif student.enrollment_status == "suspended" or student.enrollment_status == "withdrawn" %}{% ui_badge label=student.get_enrollment_status_display color="red" %}
+                  {% else %}{% ui_badge label=student.get_enrollment_status_display color="gray" %}{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        {% ui_empty_state title="No students yet" description="Students you add will show up here." icon="graduation-cap" %}
+      {% endif %}
+    {% end_ui_card %}
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+{% if enrollment_breakdown %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var data = JSON.parse(document.getElementById("enrollment-data").textContent);
+    new Chart(document.getElementById("enrollment-chart"), {
+      type: "doughnut",
+      data: {
+        labels: Object.keys(data),
+        datasets: [{
+          data: Object.values(data),
+          backgroundColor: ["#2563eb", "#64748b", "#059669", "#d97706", "#dc2626"],
+          borderColor: "transparent",
+        }],
+      },
+      options: { plugins: { legend: { position: "bottom" } } },
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

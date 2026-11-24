@@ -125,6 +125,27 @@ def test_me_returns_current_user(api_client, organization, user_factory):
 
     assert resp.status_code == 200
     assert resp.json()["data"]["email"] == "a@example.com"
+    assert resp.json()["data"]["student_public_id"] is None
+
+
+@pytest.mark.django_db
+def test_me_exposes_linked_student_public_id(
+    api_client, organization, user_factory, school_factory, student_factory
+):
+    school = school_factory(organization=organization)
+    user = user_factory(organization=organization, email="s@example.com", password="s3cret-pass!")
+    student = student_factory(school=school, user=user)
+
+    login = api_client.post(
+        "/api/v1/auth/login", {"email": "s@example.com", "password": "s3cret-pass!"}, format="json"
+    ).json()["data"]
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {login['access']}")
+
+    resp = api_client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["student_public_id"] == str(student.public_id)
+    assert resp.json()["data"]["staff_public_id"] is None
+    assert resp.json()["data"]["guardian_public_id"] is None
 
 
 @pytest.mark.django_db

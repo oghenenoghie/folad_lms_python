@@ -17,7 +17,9 @@ class School(BaseModel):
         "tenancy.Organization", on_delete=models.PROTECT, related_name="schools"
     )
     name = models.CharField(max_length=255)
-    code = models.CharField(max_length=20)
+    # Optional: left blank, save() derives one from `name` — see
+    # apps.core.codegen.
+    code = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True, default="")
     phone = models.CharField(max_length=32, blank=True, default="")
     email = models.EmailField(blank=True, default="")
@@ -34,12 +36,25 @@ class School(BaseModel):
     def __str__(self) -> str:
         return self.name
 
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from apps.core.codegen import next_abbreviation_code
+
+            self.code = next_abbreviation_code(
+                queryset=School.all_tenants.filter(organization_id=self.organization_id),
+                field_name="code",
+                name=self.name,
+            )
+        super().save(*args, **kwargs)
+
 
 class Campus(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     school = models.ForeignKey(School, on_delete=models.PROTECT, related_name="campuses")
     name = models.CharField(max_length=255)
-    code = models.CharField(max_length=20)
+    # Optional: left blank, save() derives one from `name` — see
+    # apps.core.codegen.
+    code = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True, default="")
     is_main = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -53,6 +68,17 @@ class Campus(BaseModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from apps.core.codegen import next_abbreviation_code
+
+            self.code = next_abbreviation_code(
+                queryset=Campus.all_tenants.filter(school_id=self.school_id),
+                field_name="code",
+                name=self.name,
+            )
+        super().save(*args, **kwargs)
 
 
 class AcademicYear(BaseModel):
@@ -107,7 +133,9 @@ class Department(BaseModel):
     organization = models.ForeignKey("tenancy.Organization", on_delete=models.PROTECT, related_name="+")
     school = models.ForeignKey(School, on_delete=models.PROTECT, related_name="departments")
     name = models.CharField(max_length=150)
-    code = models.CharField(max_length=20)
+    # Optional: left blank, save() derives one from `name` — see
+    # apps.core.codegen.
+    code = models.CharField(max_length=20, blank=True)
     description = models.CharField(max_length=255, blank=True, default="")
     is_active = models.BooleanField(default=True)
 
@@ -122,3 +150,14 @@ class Department(BaseModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from apps.core.codegen import next_abbreviation_code
+
+            self.code = next_abbreviation_code(
+                queryset=Department.all_tenants.filter(school_id=self.school_id),
+                field_name="code",
+                name=self.name,
+            )
+        super().save(*args, **kwargs)

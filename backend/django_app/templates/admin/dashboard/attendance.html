@@ -1,0 +1,23 @@
+{% load i18n unfold %}
+{% comment %}Real Monday-Friday attendance for the current week — see
+   apps.core.dashboard.dashboard_callback's weekly_attendance_* context,
+   built from apps.attendance.models.Attendance.{% endcomment %}
+{% component "unfold/components/card.html" with title=_("Weekly attendance") %}
+    <div class="mb-3 flex gap-4 text-sm">
+        <div>
+            <span class="font-semibold text-emerald-600 dark:text-emerald-400">
+                {% if weekly_attendance_present_pct is not None %}{{ weekly_attendance_present_pct }}%{% else %}—{% endif %}
+            </span>
+            {% translate "Present" %}
+        </div>
+        <div>
+            <span class="font-semibold text-amber-600 dark:text-amber-400">
+                {% if weekly_attendance_absent_pct is not None %}{{ weekly_attendance_absent_pct }}%{% else %}—{% endif %}
+            </span>
+            {% translate "Absent" %}
+        </div>
+    </div>
+    <div class="h-48">
+        {% component "unfold/components/chart/bar.html" with data=weekly_attendance_chart_json height="180" %}{% endcomponent %}
+    </div>
+{% endcomponent %}

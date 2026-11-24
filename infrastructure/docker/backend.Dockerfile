@@ -31,6 +31,22 @@ COPY backend/shared /app/shared
 
 ENV PYTHONPATH="/app/django_app:/app/fastapi_app:/app"
 
+# Compiles the design-system CSS (theme_src/) with the standalone Tailwind
+# CLI — a single native binary, no Node/npm toolchain required or present
+# in this image. Must run before collectstatic below so the compiled
+# static/css/app.css gets picked up and hashed along with everything else.
+RUN TAILWIND_ARCH=$(case "$(uname -m)" in aarch64|arm64) echo arm64 ;; *) echo x64 ;; esac) && \
+    curl -sSL -o /usr/local/bin/tailwindcss \
+      "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.13/tailwindcss-linux-${TAILWIND_ARCH}" && \
+    chmod +x /usr/local/bin/tailwindcss && \
+    cd django_app && tailwindcss -i theme_src/input.css -o static/css/app.css -c theme_src/tailwind.config.js --minify
+
+# Bakes hashed/compressed static assets into the image at build time (no
+# DB/Redis/env vars needed — collectstatic only touches the filesystem).
+# Runs as root before the chown below so the resulting files end up owned
+# by appuser like everything else.
+RUN cd django_app && DJANGO_SETTINGS_MODULE=config.settings.prod python manage.py collectstatic --noinput
+
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 

@@ -1,0 +1,248 @@
+{% extends "layouts/app.html" %}
+{% load ui_tags %}
+{% block title %}{{ school.name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% ui_breadcrumbs breadcrumb_items %}
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6 p-6">
+
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-xl font-semibold">{{ school.name }}</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">{{ school.code }}{% if not school.is_active %} &middot; Inactive{% endif %}</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if can_update_school %}
+      <button type="button" x-data x-on:click="$dispatch('open-modal-edit-school')" class="btn-secondary">
+        {% ui_icon "pencil" "h-4 w-4" %}<span>Edit</span>
+      </button>
+      {% endif %}
+      {% if can_delete_school %}
+      <button type="button" class="btn-danger" hx-post="{{ school_delete_url }}" hx-confirm="Delete {{ school.name }}? This cannot be undone.">
+        {% ui_icon "trash-2" "h-4 w-4" %}<span>Delete</span>
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if school.address or school.phone or school.email %}
+  <div class="card-body card grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+    <div><p class="text-slate-500 dark:text-slate-400">Address</p><p>{{ school.address|default:"—" }}</p></div>
+    <div><p class="text-slate-500 dark:text-slate-400">Phone</p><p>{{ school.phone|default:"—" }}</p></div>
+    <div><p class="text-slate-500 dark:text-slate-400">Email</p><p>{{ school.email|default:"—" }}</p></div>
+  </div>
+  {% endif %}
+
+  {% if can_view_campuses %}
+  {% ui_card title="Campuses" %}
+    {% if can_create_campus %}
+    <div class="mb-3 flex justify-end">
+      <button type="button" x-data x-on:click="$dispatch('open-modal-new-campus')" class="btn-secondary">
+        {% ui_icon "plus" "h-4 w-4" %}<span>New campus</span>
+      </button>
+    </div>
+    {% endif %}
+    {% if campuses %}
+    <div class="table-wrap">
+      <table class="table-base">
+        <thead><tr><th>Name</th><th>Code</th><th>Main</th><th>Status</th><th class="w-1"></th></tr></thead>
+        <tbody>
+          {% for campus in campuses %}
+          <tr>
+            <td>{{ campus.name }}</td>
+            <td>{{ campus.code }}</td>
+            <td>{% if campus.is_main %}{% ui_badge label="Main" color="blue" %}{% endif %}</td>
+            <td>{% if campus.is_active %}{% ui_badge label="Active" color="green" %}{% else %}{% ui_badge label="Inactive" color="gray" %}{% endif %}</td>
+            <td class="text-right">
+              {% if campus.update_url %}
+              <button type="button" class="btn-ghost !px-2 !py-1" x-data x-on:click="$dispatch('open-modal-{{ campus.modal_id }}')">{% ui_icon "pencil" "h-4 w-4" %}</button>
+              {% endif %}
+              {% if campus.delete_url %}
+              <button type="button" class="btn-ghost !px-2 !py-1" hx-post="{{ campus.delete_url }}" hx-confirm="Delete campus {{ campus.name }}?">{% ui_icon "trash-2" "h-4 w-4" %}</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      {% ui_empty_state title="No campuses yet" icon="building-2" %}
+    {% endif %}
+  {% end_ui_card %}
+  {% endif %}
+
+  {% if can_view_years %}
+  {% ui_card title="Academic years" %}
+    {% if can_create_year %}
+    <div class="mb-3 flex justify-end">
+      <button type="button" x-data x-on:click="$dispatch('open-modal-new-year')" class="btn-secondary">
+        {% ui_icon "plus" "h-4 w-4" %}<span>New academic year</span>
+      </button>
+    </div>
+    {% endif %}
+    {% if academic_years %}
+    <div class="space-y-4">
+      {% for year in academic_years %}
+      <div class="rounded-lg border border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="font-medium">{{ year.name }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400">{{ year.start_date }} – {{ year.end_date }}</span>
+            {% if year.is_current %}{% ui_badge label="Current" color="blue" %}{% endif %}
+            {% if not year.is_active %}{% ui_badge label="Inactive" color="gray" %}{% endif %}
+          </div>
+          <div class="flex items-center gap-2">
+            {% if year.activate_url %}
+            <button type="button" class="btn-ghost !px-2 !py-1 text-xs" hx-post="{{ year.activate_url }}" hx-confirm="Make {{ year.name }} the current academic year?">Activate</button>
+            {% endif %}
+            {% if year.update_url %}
+            <button type="button" class="btn-ghost !px-2 !py-1" x-data x-on:click="$dispatch('open-modal-{{ year.modal_id }}')">{% ui_icon "pencil" "h-4 w-4" %}</button>
+            {% endif %}
+            {% if year.delete_url %}
+            <button type="button" class="btn-ghost !px-2 !py-1" hx-post="{{ year.delete_url }}" hx-confirm="Delete academic year {{ year.name }}?">{% ui_icon "trash-2" "h-4 w-4" %}</button>
+            {% endif %}
+          </div>
+        </div>
+        {% if can_view_terms %}
+        <div class="px-4 py-3">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Terms</p>
+            {% if can_create_term %}
+            <button type="button" x-data x-on:click="$dispatch('open-modal-{{ year.term_modal_id }}')" class="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">+ Add term</button>
+            {% endif %}
+          </div>
+          {% if year.term_list %}
+          <div class="space-y-1.5">
+            {% for term in year.term_list %}
+            <div class="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-sm dark:bg-slate-800/50">
+              <span>{{ term.sequence }}. {{ term.name }} <span class="text-slate-400">({{ term.start_date }} – {{ term.end_date }})</span></span>
+              <div class="flex items-center gap-2">
+                {% if term.is_current %}{% ui_badge label="Current" color="blue" %}{% endif %}
+                {% if term.activate_url %}
+                <button type="button" class="btn-ghost !px-1.5 !py-1 text-xs" hx-post="{{ term.activate_url }}" hx-confirm="Make {{ term.name }} the current term?">Activate</button>
+                {% endif %}
+                {% if term.update_url %}
+                <button type="button" class="btn-ghost !px-1.5 !py-1" x-data x-on:click="$dispatch('open-modal-{{ term.modal_id }}')">{% ui_icon "pencil" "h-4 w-4" %}</button>
+                {% endif %}
+                {% if term.delete_url %}
+                <button type="button" class="btn-ghost !px-1.5 !py-1" hx-post="{{ term.delete_url }}" hx-confirm="Delete term {{ term.name }}?">{% ui_icon "trash-2" "h-4 w-4" %}</button>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-sm text-slate-400">No terms yet.</p>
+          {% endif %}
+        </div>
+        {% if can_create_term %}
+        {% ui_modal id=year.term_modal_id title="New term" %}
+          {% include "web/_generic_form.html" with form=term_create_form post_url=year.term_create_url %}
+        {% end_ui_modal %}
+        {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+      {% ui_empty_state title="No academic years yet" icon="calendar" %}
+    {% endif %}
+  {% end_ui_card %}
+  {% endif %}
+
+  {% if can_view_departments %}
+  {% ui_card title="Departments" %}
+    {% if can_create_department %}
+    <div class="mb-3 flex justify-end">
+      <button type="button" x-data x-on:click="$dispatch('open-modal-new-department')" class="btn-secondary">
+        {% ui_icon "plus" "h-4 w-4" %}<span>New department</span>
+      </button>
+    </div>
+    {% endif %}
+    {% if departments %}
+    <div class="table-wrap">
+      <table class="table-base">
+        <thead><tr><th>Name</th><th>Code</th><th>Status</th><th class="w-1"></th></tr></thead>
+        <tbody>
+          {% for department in departments %}
+          <tr>
+            <td>{{ department.name }}</td>
+            <td>{{ department.code }}</td>
+            <td>{% if department.is_active %}{% ui_badge label="Active" color="green" %}{% else %}{% ui_badge label="Inactive" color="gray" %}{% endif %}</td>
+            <td class="text-right">
+              {% if department.update_url %}
+              <button type="button" class="btn-ghost !px-2 !py-1" x-data x-on:click="$dispatch('open-modal-{{ department.modal_id }}')">{% ui_icon "pencil" "h-4 w-4" %}</button>
+              {% endif %}
+              {% if department.delete_url %}
+              <button type="button" class="btn-ghost !px-2 !py-1" hx-post="{{ department.delete_url }}" hx-confirm="Delete department {{ department.name }}?">{% ui_icon "trash-2" "h-4 w-4" %}</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      {% ui_empty_state title="No departments yet" icon="building-2" %}
+    {% endif %}
+  {% end_ui_card %}
+  {% endif %}
+</div>
+
+{# --- Modals: create --- #}
+{% if can_update_school %}
+{% ui_modal id="edit-school" title="Edit school" %}
+  {% include "web/_generic_form.html" with form=edit_form post_url=school_update_url %}
+{% end_ui_modal %}
+{% endif %}
+
+{% if can_create_campus %}
+{% ui_modal id="new-campus" title="New campus" %}
+  {% include "web/_generic_form.html" with form=campus_create_form post_url=campus_create_url %}
+{% end_ui_modal %}
+{% endif %}
+{% if can_create_year %}
+{% ui_modal id="new-year" title="New academic year" %}
+  {% include "web/_generic_form.html" with form=academic_year_create_form post_url=academic_year_create_url %}
+{% end_ui_modal %}
+{% endif %}
+{% if can_create_department %}
+{% ui_modal id="new-department" title="New department" %}
+  {% include "web/_generic_form.html" with form=department_create_form post_url=department_create_url %}
+{% end_ui_modal %}
+{% endif %}
+
+{# --- Modals: edit (one per row, pre-bound with that row's data) --- #}
+{% for campus in campuses %}
+  {% if campus.edit_form %}
+  {% ui_modal id=campus.modal_id title="Edit campus" %}
+    {% include "web/_generic_form.html" with form=campus.edit_form post_url=campus.update_url %}
+  {% end_ui_modal %}
+  {% endif %}
+{% endfor %}
+{% for year in academic_years %}
+  {% if year.edit_form %}
+  {% ui_modal id=year.modal_id title="Edit academic year" %}
+    {% include "web/_generic_form.html" with form=year.edit_form post_url=year.update_url %}
+  {% end_ui_modal %}
+  {% endif %}
+  {% for term in year.term_list %}
+    {% if term.edit_form %}
+    {% ui_modal id=term.modal_id title="Edit term" %}
+      {% include "web/_generic_form.html" with form=term.edit_form post_url=term.update_url %}
+    {% end_ui_modal %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+{% for department in departments %}
+  {% if department.edit_form %}
+  {% ui_modal id=department.modal_id title="Edit department" %}
+    {% include "web/_generic_form.html" with form=department.edit_form post_url=department.update_url %}
+  {% end_ui_modal %}
+  {% endif %}
+{% endfor %}
+{% endblock %}

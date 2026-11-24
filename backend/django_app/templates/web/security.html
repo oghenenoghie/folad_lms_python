@@ -1,0 +1,64 @@
+{% extends "layouts/app.html" %}
+{% load ui_tags %}
+{% block title %}Security{% endblock %}
+
+{% block breadcrumbs %}
+{% ui_breadcrumbs breadcrumb_items %}
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-2xl space-y-6 p-6">
+  <div>
+    <h1 class="text-xl font-semibold">Security</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">Two-factor authentication for your account</p>
+  </div>
+
+  {% if mfa_enabled %}
+    {% ui_card title="Two-factor authentication" %}
+      <div class="flex items-center gap-3">
+        {% ui_icon "badge-check" "h-8 w-8 text-emerald-600" %}
+        <div>
+          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Enabled</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Your account requires an authenticator code at sign-in.</p>
+        </div>
+      </div>
+    {% end_ui_card %}
+
+  {% elif mfa_pending %}
+    {% ui_card title="Finish setting up two-factor authentication" %}
+      <ol class="list-decimal space-y-4 pl-4 text-sm text-slate-700 dark:text-slate-300">
+        <li>
+          Add this account to your authenticator app (Google Authenticator, 1Password, Authy, etc.) — either
+          scan the manual-entry key below or paste the setup link if your app accepts one.
+          <div class="mt-2 rounded-lg bg-slate-100 px-3 py-2 font-mono text-xs break-all dark:bg-slate-800">{{ mfa_secret }}</div>
+        </li>
+        <li>
+          Enter the 6-digit code your app is now showing:
+          <form method="post" action="{% url 'web:mfa-verify-submit' %}" class="mt-2 flex items-end gap-2">
+            {% csrf_token %}
+            <div class="flex-1">
+              {{ verify_form.code }}
+              {% if verify_form.code.errors %}<p class="field-error">{{ verify_form.code.errors.0 }}</p>{% endif %}
+            </div>
+            <button type="submit" class="btn-primary">Verify &amp; enable</button>
+          </form>
+        </li>
+      </ol>
+    {% end_ui_card %}
+
+  {% else %}
+    {% ui_card title="Two-factor authentication" %}
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Not enabled</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Add an authenticator-app code to your sign-in for extra security.</p>
+        </div>
+        <form method="post" action="{% url 'web:mfa-enroll-start' %}">
+          {% csrf_token %}
+          {% ui_button label="Enable two-factor authentication" variant="primary" icon="shield" type="submit" %}
+        </form>
+      </div>
+    {% end_ui_card %}
+  {% endif %}
+</div>
+{% endblock %}

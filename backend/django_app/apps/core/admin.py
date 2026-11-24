@@ -1,0 +1,74 @@
+"""Shared Django Admin utilities."""
+from django.conf import settings
+
+
+# UNFOLD["ENVIRONMENT"] / ["ENVIRONMENT_TITLE_PREFIX"] (config/settings/base.py).
+# Real callables rather than a value computed once in base.py, because
+# DEBUG there reflects only base.py's own default — dev.py/prod.py each
+# override it *after* `from .base import *`, so the true value is only
+# known once Django has finished loading whichever settings module was
+# actually selected. Reading settings.DEBUG lazily at request time (via
+# Unfold's dotted-path callback resolution) picks up that final value.
+# Staff who keep both a local admin and the production admin open in
+# adjacent tabs get a visible, hard-to-miss cue for which one they're in.
+def environment_badge(request):
+    return ("Development", "warning") if settings.DEBUG else ("Production", "danger")
+
+
+def environment_title_prefix(request):
+    return "[DEV] " if settings.DEBUG else ""
+
+
+class TenantFKAdminMixin:
+    """Any FK field pointing at a tenant-scoped (RLS) model — regardless of
+    whether *this* ModelAdmin's own model is itself tenant-scoped — needs
+    this. Left unset, a FK field's *validation* queryset defaults to the
+    related model's default manager (`objects`, a TenantManager), which
+    returns empty with no organization context active — and Django Admin's
+    session-based auth never activates one (see TenantAdminMixin below).
+    A search/autocomplete widget can still list choices fine (it may be
+    backed by a different, already-unscoped queryset), so the field looks
+    selectable right up until save, which fails with "that choice is not
+    one of the available choices". Mix this in on ANY ModelAdmin — not
+    just ones for tenant-scoped models — that has such a field (e.g.
+    UserRoleAdmin.user, which points at the tenant-scoped User model even
+    though UserRole itself carries no organization column).
+    """
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        related_model = db_field.remote_field.model
+        if "queryset" not in kwargs and hasattr(related_model, "all_tenants"):
+            kwargs["queryset"] = related_model.all_tenants.all()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+class TenantAdminMixin(TenantFKAdminMixin):
+    """Django Admin is a platform-level ops console (§11 ARCHITECTURE.md),
+    not a tenant-scoped surface — staff need to see records across every
+    organization, not just whichever one happens to be in the app-layer
+    tenant context. That context is never set at all for admin's
+    session-based auth (nothing calls activate_organization() there), so
+    every model whose default `objects` manager is a tenant-scoped
+    TenantManager (apps.tenancy.managers) would otherwise show an empty
+    list in Django Admin — TenantManager.get_queryset() returns nothing
+    with no context set. Mix this into any such model's ModelAdmin to use
+    the unscoped `all_tenants` manager instead, mirroring the same
+    escape hatch apps/accounts/managers.py's UserManager.get_by_natural_key
+    and apps/accounts/authentication.py already use for the same reason.
+    """
+
+    # created_by/updated_by/deleted_at (TimestampedModel) are set
+    # programmatically by the services layer, never by hand in the admin —
+    # read-only here so they render as plain text instead of an editable
+    # widget. Left off this list, deleted_at in particular is a fully
+    # editable DateTimeField on every add/change form: an admin operator
+    # can accidentally soft-delete a brand-new record on creation, or hit
+    # a spurious "enter a valid date" error from a stray value in it.
+    readonly_fields = ["created_by", "updated_by", "deleted_at"]
+
+    def get_queryset(self, request):
+        qs = self.model.all_tenants.all()
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
