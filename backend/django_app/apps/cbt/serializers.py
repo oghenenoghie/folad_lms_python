@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from apps.academics.models import ClassLevel, Subject
@@ -320,7 +322,16 @@ class StudentAnswerSerializer(serializers.ModelSerializer):
 
 
 class AttemptAnswerSubmissionSerializer(serializers.Serializer):
-    """Strict input contract for candidate answer writes."""
+    """Strict, resource-bounded input contract for candidate answer writes."""
+
+    MAX_RESPONSE_BYTES = 16_384
+    MAX_RESPONSE_DEPTH = 8
+    MAX_RESPONSE_NODES = 512
+    MAX_STRING_LENGTH = 4_096
+    # Per-container cap. Legitimate answers (selected option labels, ordering
+    # sequences, matching pairs) are bounded by a question's option count, so
+    # 100 is generous; without it a flat list can pass the node budget.
+    MAX_COLLECTION_ITEMS = 100
 
     exam_question = serializers.UUIDField()
     response = serializers.JSONField()
@@ -329,6 +340,48 @@ class AttemptAnswerSubmissionSerializer(serializers.Serializer):
     def validate_response(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("response must be a JSON object")
+
+        try:
+            encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError):
+            raise serializers.ValidationError("response must contain finite, valid JSON values")
+
+        if len(encoded) > self.MAX_RESPONSE_BYTES:
+            raise serializers.ValidationError(
+                f"response must not exceed {self.MAX_RESPONSE_BYTES} bytes"
+            )
+
+        stack = [(value, 1)]
+        node_count = 0
+        while stack:
+            current, depth = stack.pop()
+            node_count += 1
+            if node_count > self.MAX_RESPONSE_NODES:
+                raise serializers.ValidationError(
+                    f"response must not contain more than {self.MAX_RESPONSE_NODES} values"
+                )
+            if depth > self.MAX_RESPONSE_DEPTH:
+                raise serializers.ValidationError(
+                    f"response nesting must not exceed {self.MAX_RESPONSE_DEPTH} levels"
+                )
+            if isinstance(current, str):
+                if len(current) > self.MAX_STRING_LENGTH:
+                    raise serializers.ValidationError(
+                        f"response strings must not exceed {self.MAX_STRING_LENGTH} characters"
+                    )
+            elif isinstance(current, (dict, list)) and len(current) > self.MAX_COLLECTION_ITEMS:
+                raise serializers.ValidationError(
+                    f"response lists and objects must not contain more than {self.MAX_COLLECTION_ITEMS} items"
+                )
+            elif isinstance(current, dict):
+                for key, child in current.items():
+                    if not isinstance(key, str) or len(key) > self.MAX_STRING_LENGTH:
+                        raise serializers.ValidationError("response object keys must be bounded strings")
+                    stack.append((key, depth + 1))
+                    stack.append((child, depth + 1))
+            elif isinstance(current, list):
+                stack.extend((child, depth + 1) for child in current)
+
         return value
 
 
