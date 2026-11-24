@@ -211,8 +211,8 @@ else:
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": env("POSTGRES_DB", default="sms"),
-            "USER": env("POSTGRES_USER", default="sms"),
-            "PASSWORD": env("POSTGRES_PASSWORD", default="sms"),
+            "USER": env("POSTGRES_USER", default="sms_app"),
+            "PASSWORD": env("POSTGRES_PASSWORD", default="sms_app"),
             "HOST": env("POSTGRES_HOST", default="localhost"),
             "PORT": env("POSTGRES_PORT", default="5432"),
             "CONN_MAX_AGE": env.int("DB_CONN_MAX_AGE", default=60),

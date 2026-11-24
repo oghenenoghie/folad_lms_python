@@ -49,6 +49,61 @@ curl http://localhost:8080/edge/v1/health  # FastAPI liveness
 curl http://localhost:8080/edge/v1/ready   # FastAPI readiness (DB + cache)
 ```
 
+### Database roles
+
+The compose `postgres` service has two roles, matching CI (`.github/workflows/backend-ci.yml`) and
+production (§7 `ARCHITECTURE.md`):
+
+| Role | Attributes | Used by |
+|---|---|---|
+| `postgres` (`POSTGRES_SUPERUSER`) | Superuser, so it bypasses RLS | You, for admin work: `docker compose exec postgres psql -U postgres -d sms` |
+| `sms_app` (`POSTGRES_USER`) | `LOGIN CREATEDB`; no `SUPERUSER`, no `BYPASSRLS`; owns the `sms` database | Django, FastAPI, Celery, `migrate`, `pytest` |
+
+Superusers bypass Row-Level Security. An app connected as one silently loses the RLS layer of
+tenant isolation, and the RLS tests in `pytest` fail. `sms_app` owns the tables it migrates, which
+`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `CREATE POLICY` require. Every tenant table also
+has `FORCE ROW LEVEL SECURITY`, so the policies apply to that owner too. `CREATEDB` lets
+pytest-django create its `test_*` database.
+
+`infrastructure/postgres/initdb/10-create-app-role.sql` creates `sms_app` the first time the
+service starts with an empty `postgres_data` volume. Postgres never re-runs init scripts after that,
+so a database created before this setup has no `sms_app` role. You have two options:
+
+- **Start fresh.** This deletes local data, and `-v` also wipes the Redis and MinIO volumes. It's
+  the only option for a volume from the old `postgres:16-alpine` setup, which Postgres 18 refuses
+  to open ("there appears to be PostgreSQL data in ...").
+  ```bash
+  docker compose down -v
+  ```
+  ```bash
+  docker compose up -d --wait postgres redis
+  ```
+- **Keep your data.** Run the same script by hand as the existing superuser, which was `sms` before
+  this change. The script is idempotent: it creates `sms_app`, then hands it ownership of the `sms`
+  database and of every table, sequence and function `migrate` already created there. First set
+  `POSTGRES_USER=sms_app` and `POSTGRES_PASSWORD=sms_app` in both `.env` and `backend/.env`, then:
+  ```bash
+  docker compose up -d --wait postgres
+  ```
+  ```bash
+  docker compose exec -T postgres psql -U sms -d sms -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/10-create-app-role.sql
+  ```
+  For a native (non-Docker) Postgres, run it from the repo root as your superuser and pass the
+  role with `-v`:
+  ```bash
+  psql -U postgres -d sms -v ON_ERROR_STOP=1 -v app_user=sms_app -v app_password=sms_app -f infrastructure/postgres/initdb/10-create-app-role.sql
+  ```
+
+The script refuses to turn the bootstrap superuser into the app role, because that role can never
+lose `SUPERUSER`. Use a separately named role such as `sms_app`.
+
+One consequence for data migrations: `migrate` runs as `sms_app` locally and in CI, so a
+`RunPython` that reads or writes tenant tables sees zero rows unless it opts out of RLS first.
+Production runs `migrate` as a `BYPASSRLS` owner (`MIGRATE_DATABASE_URL`) and would see every row.
+To behave the same everywhere, start such a migration with
+`schema_editor.execute("SELECT set_config('app.platform_mode', 'true', true)")`. That setting is
+transaction-local, so it ends with the migration's transaction.
+
 ## Auth (Milestone 2)
 
 All under `/api/v1/auth/`:
@@ -162,6 +217,14 @@ cd django_app && python manage.py migrate && python manage.py runserver
 cd backend/fastapi_app && uvicorn main:app --reload --port 8001
 ```
 
+The easiest way to get Postgres and Redis is to run just those two compose services from the repo
+root. `backend/.env.example` already points at their published ports and at the non-superuser
+`sms_app` role (see [Database roles](#database-roles)):
+
+```bash
+docker compose up -d --wait postgres redis
+```
+
 No local Postgres? Add `USE_SQLITE=true` to `backend/.env` — `manage.py migrate`/`runserver`
 then need nothing but Python. Row-Level Security (part of Milestone 2) only runs on Postgres,
 so `pytest`'s RLS-specific tests will skip, but the app-layer tenant isolation still fully
@@ -187,6 +250,9 @@ Tests:
 cd backend
 pytest
 ```
+
+The RLS tests need `POSTGRES_USER` to be a non-superuser role without `BYPASSRLS`, such as
+`sms_app`. As a superuser they fail, because RLS never applies to superusers.
 
 ### Windows, without WSL/Docker
 
@@ -219,10 +285,12 @@ entirely and run everything as native Windows processes instead:
 
 Want real Postgres on Windows instead (needed to actually exercise RLS)? Install PostgreSQL
 from postgresql.org (EDB installer) and [Memurai Developer](https://www.memurai.com/get-memurai)
-(free, Redis-compatible — Redis has no official Windows build) as services, create the database
-(`CREATE DATABASE sms;` via "SQL Shell (psql)"), and either create a matching `sms` role or point
-`backend/.env`'s `POSTGRES_USER`/`POSTGRES_PASSWORD` at the `postgres` superuser instead — don't
-set `USE_SQLITE`.
+(free, Redis-compatible — Redis has no official Windows build) as services and create the database
+(`CREATE DATABASE sms;` via "SQL Shell (psql)"). Then create the `sms_app` role that
+`backend/.env` expects by running the init script as `postgres`, from the repo root in Git Bash:
+`psql -U postgres -d sms -v ON_ERROR_STOP=1 -v app_user=sms_app -v app_password=sms_app -f
+infrastructure/postgres/initdb/10-create-app-role.sql`. Don't point `backend/.env` at the `postgres`
+superuser: it bypasses Row-Level Security. Don't set `USE_SQLITE` either.
 
 ## Repository structure
 
@@ -269,7 +337,7 @@ backend/django_app/    # Django project: config/ (settings, urls, celery), apps/
 backend/fastapi_app/   # FastAPI edge service: api/, services/, schemas/, dependencies/, core/
 backend/shared/        # Money value object + shared enums, used by Django, Celery, and FastAPI
 backend/tests/         # pytest: unit, api
-infrastructure/        # Dockerfiles, nginx config, scripts
+infrastructure/        # Dockerfiles, nginx config, Postgres init scripts (postgres/initdb/)
 docs/                  # This file, ARCHITECTURE.md, and future module docs
 ```
 
