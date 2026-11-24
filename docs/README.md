@@ -49,6 +49,33 @@ curl http://localhost:8080/edge/v1/health  # FastAPI liveness
 curl http://localhost:8080/edge/v1/ready   # FastAPI readiness (DB + cache)
 ```
 
+### First login
+
+A fresh database has no users and no roles (migrations seed permissions only), and
+`createsuperuser` makes a user with no organization, which can use Django Admin but not the
+tenant-scoped API or either UI. Create an organization and a superuser attached to it instead.
+Superusers bypass RBAC, so no roles are needed:
+
+```bash
+docker compose exec backend-django python manage.py bootstrap_admin --email admin@example.com
+```
+
+It prompts for the password. Alternatively, pass `--password`, or set
+`DJANGO_SUPERUSER_PASSWORD` and add `--noinput`. The password must pass Django's password
+validators: at least 10 characters, and not common or all-numeric. `--org-name` defaults to
+`Demo School` and reuses an existing organization with that exact name.
+`--first-name`/`--last-name` default to `Admin`/`User`. The command refuses an email that
+already exists. Then log in:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "admin@example.com", "password": "<your password>"}'
+```
+
+The same credentials work in the `/app/` UI and the Next.js frontend. Without Docker, run
+`python manage.py bootstrap_admin ...` from `backend/django_app` instead (see below).
+
 ## Auth (Milestone 2)
 
 All under `/api/v1/auth/`:
@@ -153,19 +180,30 @@ tenant-scoped per the multi-tenancy rules above. List endpoints are paginated
 Backend (Python 3.12+):
 
 ```bash
+# From the repo root: Postgres, Redis and MinIO in Docker, published on localhost
+# (5432, 6379, 9000/9001; override with POSTGRES_PORT_HOST/REDIS_PORT_HOST/MINIO_*_PORT).
+docker compose up -d postgres redis minio
+
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # requires Postgres + Redis running locally — see USE_SQLITE below
-cd django_app && python manage.py migrate && python manage.py runserver
+cp .env.example .env   # localhost hostnames for the services above
+cd django_app
+python manage.py migrate
+python manage.py bootstrap_admin --email admin@example.com   # first login, see "First login" above
+python manage.py runserver
 # in another shell:
 cd backend/fastapi_app && uvicorn main:app --reload --port 8001
 ```
 
-No local Postgres? Add `USE_SQLITE=true` to `backend/.env` — `manage.py migrate`/`runserver`
-then need nothing but Python. Row-Level Security (part of Milestone 2) only runs on Postgres,
-so `pytest`'s RLS-specific tests will skip, but the app-layer tenant isolation still fully
-applies and the rest of the suite is unaffected.
+No local Postgres? Add `USE_SQLITE=true` to `backend/.env` and `manage.py migrate`/`runserver`
+will run without it. Redis is still required, though. `apps/accounts/jwt.py` keeps refresh
+tokens only in Django's cache (Redis), and RBAC lookups are cached there too. Without a
+reachable `REDIS_URL`, `POST /api/v1/auth/login` returns a 500 and `pytest` can't run, since it
+clears the cache before every test. The quickest option is `docker compose up -d redis`; see
+the Windows section below if Docker isn't an option. Row-Level Security (part of Milestone 2)
+only runs on Postgres, so `pytest`'s RLS-specific tests will skip under SQLite. App-layer tenant
+isolation still fully applies, and the rest of the suite is unaffected.
 
 The server-rendered UI (Phase 2+, see `UI_MIGRATION_PLAN.md`) needs its CSS compiled once
 before `runserver` will serve real styling — `static/css/app.css` is a build artifact (like
@@ -209,17 +247,23 @@ entirely and run everything as native Windows processes instead:
    multiple installed versions fighting over port 5432) is its own significant source of
    friction, independent of anything above. Row-Level Security won't run locally with this
    option (see the `USE_SQLITE` note above) — that's fine for day-to-day API work.
-3. `cd django_app && python manage.py migrate && python manage.py runserver 8010`
-   (port `8000` commonly collides with Splunk's web UI on corporate machines — use another
-   port if `8010` is also taken).
+
+   Login still needs Redis, though (see the `USE_SQLITE` note above). Install
+   [Memurai Developer](https://www.memurai.com/get-memurai), which is free and
+   Redis-compatible; Redis has no official Windows build. It runs as a service on
+   `localhost:6379`, which is what `backend/.env`'s `REDIS_URL` already points at.
+3. `cd django_app && python manage.py migrate && python manage.py bootstrap_admin --email admin@example.com`
+   (first login, see "First login" above). If it reports that no password was given, add
+   `--password '<pw>'`, because Git Bash doesn't always count as an interactive terminal.
+   Then `python manage.py runserver 8010`. Port `8000` commonly collides with Splunk's web UI
+   on corporate machines, so use another port if `8010` is also taken.
 4. In a second Git Bash window: `cd backend/fastapi_app && uvicorn main:app --reload --port 8001`
    (activate the same `.venv` first).
 5. Test: `http://localhost:8010/api/v1/health` in a browser — note `0.0.0.0` (what `runserver`
    prints) is not itself a browsable address; use `localhost`.
 
 Want real Postgres on Windows instead (needed to actually exercise RLS)? Install PostgreSQL
-from postgresql.org (EDB installer) and [Memurai Developer](https://www.memurai.com/get-memurai)
-(free, Redis-compatible — Redis has no official Windows build) as services, create the database
+from postgresql.org (EDB installer) as a service, alongside Memurai from step 2, create the database
 (`CREATE DATABASE sms;` via "SQL Shell (psql)"), and either create a matching `sms` role or point
 `backend/.env`'s `POSTGRES_USER`/`POSTGRES_PASSWORD` at the `postgres` superuser instead — don't
 set `USE_SQLITE`.
